@@ -47,7 +47,7 @@ def load_model(
         return obj
 
     index: dict[str, Path] = {}
-    for f in sorted(Path(models_dir).glob("*.yaml")):
+    for f in sorted([*Path(models_dir).glob("*.yaml"), *Path(models_dir).glob("*.yml")]):
         data = _load_yaml(f)
         if data and data.get("model_id"):
             index[data["model_id"]] = f
@@ -72,5 +72,5 @@ def resolve_model_ref(
         else load_model(cfg.model, models_dir=models_dir)
     )
     if backend_override and backend_override != spec.backend:
-        spec = spec.model_copy(update={"backend": backend_override})
+        spec = ModelSpec.model_validate({**spec.model_dump(), "backend": backend_override})
     return spec

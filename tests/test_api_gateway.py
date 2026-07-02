@@ -30,3 +30,22 @@ def test_api_requires_checkpoint():
 
     with pytest.raises(ValueError):
         ApiGateway(ModelSpec(model_id="x", backend="api"))
+
+
+def test_api_handles_null_content_and_empty_choices(monkeypatch):
+    import pytest
+
+    spec = ModelSpec(model_id="x", backend="api", checkpoint="m", base_url="https://e/v1")
+    gateway = ApiGateway(spec)
+    req = GenerationRequest.from_prompt("hi", DecodeParams())
+
+    # null content coerces to "" instead of crashing the (required str) TraceRecord
+    monkeypatch.setattr(
+        gateway, "_chat_completion", lambda payload: {"choices": [{"message": {"content": None}}]}
+    )
+    assert gateway.generate(req).text == ""
+
+    # empty choices raises a clear error
+    monkeypatch.setattr(gateway, "_chat_completion", lambda payload: {"choices": []})
+    with pytest.raises(RuntimeError):
+        gateway.generate(req)

@@ -24,6 +24,7 @@ class HFLocalGateway(ModelGateway):
             raise NotImplementedError("Quantized loading lands later (ADR-0003); not in Phase 0.")
         self._model = None
         self._tokenizer = None
+        self._device = None
 
     def _ensure_loaded(self) -> None:
         if self._model is not None:
@@ -31,19 +32,23 @@ class HFLocalGateway(ModelGateway):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        if self.spec.device == "cuda" and not torch.cuda.is_available():
+        device = self.spec.device
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        if device == "cuda" and not torch.cuda.is_available():
             raise RuntimeError(
                 f"model '{self.spec.model_id}' requests device=cuda but no CUDA device is "
                 "available. Run 7B/CUDA cards on a GPU box (ADR-0003); on this laptop use "
                 "backend=api or a tiny hf_local card."
             )
+        self._device = device
         dtype = getattr(torch, self.spec.dtype, torch.float32)
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.spec.checkpoint, revision=self.spec.revision
         )
         self._model = AutoModelForCausalLM.from_pretrained(
             self.spec.checkpoint, revision=self.spec.revision, torch_dtype=dtype
-        ).to(self.spec.device)
+        ).to(self._device)
         self._model.eval()
 
     def _render(self, messages) -> str:
@@ -61,7 +66,7 @@ class HFLocalGateway(ModelGateway):
         self._ensure_loaded()
         set_seeds(request.params.seed)
         prompt = self._render(request.messages)
-        inputs = self._tokenizer(prompt, return_tensors="pt").to(self.spec.device)
+        inputs = self._tokenizer(prompt, return_tensors="pt").to(self._device)
         p = request.params
         start = time.perf_counter()
         with torch.no_grad():

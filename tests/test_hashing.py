@@ -67,3 +67,18 @@ def test_hash_changes_with_decode_param(field, val):
 
 def test_hash_changes_with_messages():
     assert _hash(messages=[Message(role="user", content="different")]) != _hash()
+
+
+def test_content_hash_golden_value():
+    # Pins the ADR-0004 hashing scheme; a change to version/separators/payload must fail loudly.
+    spec = _spec(model_id="golden", checkpoint="ckpt", revision="rev1")
+    msgs = [Message(role="user", content="hello")]
+    h = content_hash(model_fingerprint(spec), msgs, DecodeParams())
+    assert h == "sha256:ef384188b1b93831b4033364454425a95e4195e9cd7d3320aaf5590c89b4f7b2"
+
+
+def test_hash_ignores_non_fingerprint_fields():
+    # device / base_url / api_key_env / notes must NOT change the identity (ADR-0004).
+    a = _hash(_spec())
+    b = _hash(_spec(device="cuda", base_url="https://x/v1", api_key_env="OTHER", notes="hi"))
+    assert a == b

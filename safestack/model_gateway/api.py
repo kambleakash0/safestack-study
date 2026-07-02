@@ -56,10 +56,14 @@ class ApiGateway(ModelGateway):
         start = time.perf_counter()
         data = self._chat_completion(payload)
         elapsed = (time.perf_counter() - start) * 1000.0
-        choice = data["choices"][0]
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"api backend: provider returned no choices (keys: {list(data)})")
+        choice = choices[0]
         usage = data.get("usage") or {}
+        text = (choice.get("message") or {}).get("content") or ""
         return GenerationResult(
-            text=choice["message"]["content"],
+            text=text,
             model_id=self.spec.model_id,
             backend=self.spec.backend,
             content_hash=content_hash(model_fingerprint(self.spec), request.messages, p),

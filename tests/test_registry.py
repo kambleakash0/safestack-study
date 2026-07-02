@@ -26,5 +26,16 @@ def test_load_experiment_and_resolve():
 
 def test_backend_override():
     cfg = load_experiment_config(SMOKE)
-    spec = resolve_model_ref(cfg, backend_override="mock", models_dir=MODELS)
-    assert spec.backend == "mock"
+    # overriding to a DIFFERENT backend actually exercises the override branch
+    spec = resolve_model_ref(cfg, backend_override="api", models_dir=MODELS)
+    assert spec.backend == "api"
+    # no override leaves the resolved backend untouched
+    assert resolve_model_ref(cfg, models_dir=MODELS).backend == "mock"
+
+
+def test_backend_override_invalid_rejected():
+    from pydantic import ValidationError
+
+    cfg = load_experiment_config(SMOKE)
+    with pytest.raises(ValidationError):
+        resolve_model_ref(cfg, backend_override="nonsense", models_dir=MODELS)
