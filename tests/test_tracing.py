@@ -44,3 +44,28 @@ def test_writer_roundtrip(tmp_path):
     assert len(lines) == 2
     RunRecord.model_validate_json((run_dir / "run.json").read_text())
     TraceRecord.model_validate_json(lines[0])
+
+
+def test_redact_defaults_to_private():
+    assert redact("secret") == "secret"
+
+
+def test_writer_handles_non_ascii(tmp_path):
+    run_dir = tmp_path / "r"
+    writer = TraceWriter(run_dir)
+    trace = TraceRecord(
+        trace_id="t",
+        run_id="r",
+        model_id="m",
+        backend="mock",
+        content_hash="sha256:z",
+        prompt="héllo 世界",
+        output="café — 世界",
+        decode={},
+        seed=0,
+    )
+    writer.append_trace(trace)
+    line = (run_dir / "traces.jsonl").read_text(encoding="utf-8").strip()
+    parsed = TraceRecord.model_validate_json(line)
+    assert parsed.prompt == "héllo 世界"
+    assert parsed.output == "café — 世界"

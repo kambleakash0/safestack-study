@@ -20,7 +20,7 @@ def hash_text(s: str) -> str:
     return "sha256:" + hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
-def redact(text: str, public_log: bool) -> str:
+def redact(text: str, public_log: bool = False) -> str:
     """Full text when private (default); a content hash when marked for public export."""
     return hash_text(text) if public_log else text
 
@@ -80,10 +80,10 @@ class TraceWriter:
 
     def write_run(self, record: RunRecord) -> Path:
         path = self.run_dir / "run.json"
-        path.write_text(record.model_dump_json(indent=2))
+        path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
         return path
 
     def append_trace(self, record: TraceRecord) -> None:
-        with (self.run_dir / "traces.jsonl").open("a") as f:
+        with (self.run_dir / "traces.jsonl").open("a", encoding="utf-8") as f:
             f.write(record.model_dump_json() + "\n")
             f.flush()

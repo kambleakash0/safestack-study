@@ -30,3 +30,22 @@ def test_tiny_gpt2_generates_on_cpu():
         assert result.output_tokens is not None
     finally:
         gateway.close()
+
+
+def test_hf_unknown_dtype_fails_loudly():
+    import pytest
+
+    from safestack.config import DecodeParams, ModelSpec
+    from safestack.model_gateway.base import GenerationRequest
+    from safestack.model_gateway.hf_local import HFLocalGateway
+
+    spec = ModelSpec(
+        model_id="x",
+        backend="hf_local",
+        checkpoint="sshleifer/tiny-gpt2",
+        dtype="bogus",
+        device="cpu",
+    )
+    gateway = HFLocalGateway(spec)
+    with pytest.raises(ValueError):
+        gateway.generate(GenerationRequest.from_prompt("hi", DecodeParams()))

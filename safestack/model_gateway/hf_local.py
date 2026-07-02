@@ -42,7 +42,9 @@ class HFLocalGateway(ModelGateway):
                 "backend=api or a tiny hf_local card."
             )
         self._device = device
-        dtype = getattr(torch, self.spec.dtype, torch.float32)
+        dtype = getattr(torch, self.spec.dtype, None)
+        if not isinstance(dtype, torch.dtype):
+            raise ValueError(f"unknown dtype '{self.spec.dtype}' for model '{self.spec.model_id}'")
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.spec.checkpoint, revision=self.spec.revision
         )
