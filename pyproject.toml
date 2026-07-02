@@ -1,0 +1,58 @@
+[project]
+name = "safestack"
+version = "0.0.1"
+description = "Defense-in-depth evaluation for safety-aligned open LLMs"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "pydantic>=2.9",
+    "pyyaml>=6.0.2",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+# Local weight loading (tiny model on the laptop; the 7B on a cloud GPU later).
+# torch 2.6 is the first cp313 macOS-arm64 wheel; kept out of base so the mock path is torch-free.
+hf = [
+    "torch>=2.6",
+    "transformers>=4.46,<5",
+]
+# Hosted (OpenAI-compatible) inference backend, e.g. Mistral La Plateforme.
+api = [
+    "httpx>=0.27",
+]
+
+[project.scripts]
+safestack = "safestack.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["safestack"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+flake8-bugbear = { extend-immutable-calls = ["typer.Option", "typer.Argument"] }
+
+[tool.pytest.ini_options]
+addopts = "-m 'not hf' --import-mode=importlib"
+markers = [
+    "hf: needs the hf extra (torch/transformers)",
+]
+testpaths = ["tests"]
+
+[tool.uv]
+# Dependency cooldown: don't resolve packages published in the last 7 days.
+exclude-newer = "7 days"

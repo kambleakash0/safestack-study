@@ -1,0 +1,8 @@
+model_id: mistral_7b_instruct
+backend: hf_local
+checkpoint: mistralai/Mistral-7B-Instruct-v0.3   # target model, ADR-0002
+revision: main                                    # pin to a commit SHA in Phase 1
+chat_template: mistral
+dtype: bfloat16
+device: cuda
+notes: "Runs on a cloud GPU (ADR-0003). The host guard blocks accidental laptop loads."
