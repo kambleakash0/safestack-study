@@ -1,0 +1,50 @@
+# --- OS ---
+.DS_Store
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Environments ---
+.venv/
+venv/
+env/
+.env
+.python-version
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Experiment tracking / run artifacts ---
+wandb/
+mlruns/
+runs/
+outputs/
+logs/
+
+# --- Model weights & adapters (never commit) ---
+checkpoints/
+adapters/
+*.safetensors
+*.bin
+*.pt
+*.gguf
+
+# --- Data ---
+# Raw, private, and cached data are never committed.
+# Manifests (data/manifests/) and sanitized examples (data/public_sanitized_examples/) ARE tracked.
+data/raw/
+data/private/
+data/cache/
+*.arrow
+
+# --- Secrets ---
+*.key
+.hf_token
