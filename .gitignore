@@ -1,6 +1,9 @@
 # --- OS ---
 .DS_Store
 
+# --- Private (local-only provenance / untracked material) ---
+/private/
+
 # --- Python ---
 __pycache__/
 *.py[cod]

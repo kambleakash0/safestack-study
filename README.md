@@ -34,7 +34,6 @@ anything here.
 ## Documentation
 
 - Master plan: [`docs/prd/safestack-master-plan.md`](docs/prd/safestack-master-plan.md)
-- Original brief: [`docs/prd/project-brief.md`](docs/prd/project-brief.md)
 - Decision records: [`docs/adr/`](docs/adr/)
 - Working conventions: [`docs/WORKFLOW.md`](docs/WORKFLOW.md)
 

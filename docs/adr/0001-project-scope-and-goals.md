@@ -6,8 +6,8 @@
 
 ## Context
 
-SafeStack grew from a seed brief (`docs/prd/project-brief.md`) into a detailed master
-plan (`docs/prd/safestack-master-plan.md`). Before building, we need to fix what the
+SafeStack grew from a seed brief into a detailed master plan
+(`docs/prd/safestack-master-plan.md`). Before building, we need to fix what the
 project is *for*, because that governs every downstream trade-off (breadth vs. depth,
 how strict the statistics must be, when to stop).
 
@@ -36,6 +36,12 @@ the study. Pursued naively, breadth invites scope creep and a multiple-compariso
    serving benchmarks, and judge calibration are stretch.
 4. **Separate the two goals explicitly:** engineering surface area is broad; scientific
    *claims* are narrow and confirmatory (see ADR-0004).
+5. **Defensive framing is enforced repo-wide.** The project uses controlled
+   robustness-stress language, not offensive "un-alignment attack" framing (master plan
+   §6.3, `RESPONSIBLE_USE.md`). The original seed brief used the offensive framing; it is
+   retained **privately** for provenance and is **not** published in this repo, so the
+   public repo stays consistent with its own responsible-use policy. (Recorded in response
+   to review feedback on the foundation PR.)
 
 ## Consequences
 
