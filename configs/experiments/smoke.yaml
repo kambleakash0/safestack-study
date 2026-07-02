@@ -1,0 +1,8 @@
+experiment_id: smoke
+description: "Phase 0 smoke test: one benign prompt through the mock gateway."
+model: mock
+prompt: "In one sentence, what is a guardrail in an LLM system?"
+decode:
+  max_new_tokens: 64
+  seed: 0
+tags: [phase-0, smoke]

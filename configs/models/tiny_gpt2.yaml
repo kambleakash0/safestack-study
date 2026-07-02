@@ -1,0 +1,7 @@
+model_id: tiny_gpt2
+backend: hf_local
+checkpoint: sshleifer/tiny-gpt2
+chat_template: none
+dtype: float32
+device: cpu
+notes: "Tiny local model to exercise the hf_local weight-loading path on the laptop."

@@ -1,0 +1,7 @@
+model_id: mistral_7b_api
+backend: api
+checkpoint: open-mistral-7b        # Mistral-7B-Instruct-v0.3 on Mistral La Plateforme
+base_url: https://api.mistral.ai/v1
+api_key_env: SAFESTACK_API_KEY
+chat_template: none                 # the provider applies its own template server-side
+notes: "Real target model via a hosted OpenAI-compatible API. Inference-only; see ADR-0005."

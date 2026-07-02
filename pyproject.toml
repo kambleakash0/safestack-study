@@ -44,6 +44,7 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+flake8-bugbear = { extend-immutable-calls = ["typer.Option", "typer.Argument"] }
 
 [tool.pytest.ini_options]
 addopts = "-m 'not hf' --import-mode=importlib"
@@ -51,3 +52,7 @@ markers = [
     "hf: needs the hf extra (torch/transformers)",
 ]
 testpaths = ["tests"]
+
+[tool.uv]
+# Dependency cooldown: don't resolve packages published in the last 7 days.
+exclude-newer = "7 days"

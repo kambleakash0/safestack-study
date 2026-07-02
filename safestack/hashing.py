@@ -44,9 +44,7 @@ def content_hash(
     messages: Sequence[Message] | Sequence[dict],
     decode: DecodeParams,
 ) -> str:
-    msgs = [
-        m if isinstance(m, dict) else {"role": m.role, "content": m.content} for m in messages
-    ]
+    msgs = [m if isinstance(m, dict) else {"role": m.role, "content": m.content} for m in messages]
     payload = {
         "cache_schema_version": CACHE_SCHEMA_VERSION,
         "fingerprint": fingerprint,
