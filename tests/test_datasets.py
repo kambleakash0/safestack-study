@@ -146,3 +146,14 @@ def test_cli_prepare_and_validate(tmp_path):
         app, ["data", "validate", "--manifest", str(manifest_path), "--data-dir", str(data_dir)]
     )
     assert r2.exit_code == 0, r2.output
+
+
+def test_shipped_dataset_configs_are_valid():
+    # Every configs/datasets/*.yaml must satisfy DatasetPrepConfig (catches a missing `split`).
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    paths = sorted((repo / "configs" / "datasets").glob("*.yaml"))
+    assert paths, "no dataset configs found"
+    for path in paths:
+        DatasetPrepConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))

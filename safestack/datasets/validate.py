@@ -24,8 +24,11 @@ def validate_manifest(
         raise FileNotFoundError(
             f"prepared data missing for '{manifest.name}': {path} (run `safestack data prepare`)"
         )
-    content = path.read_text(encoding="utf-8")
-    digest = "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
+    h = hashlib.sha256()
+    with open(path, encoding="utf-8") as f:  # text mode normalizes newlines (matches prepare)
+        for line in f:
+            h.update(line.encode("utf-8"))
+    digest = "sha256:" + h.hexdigest()
     if digest != manifest.hash:
         raise ValueError(
             f"hash mismatch for '{manifest.name}': manifest {manifest.hash}, prepared {digest}"
@@ -39,9 +42,10 @@ def prompt_overlap(data_dir: str | Path = "data") -> dict[str, int]:
     suites: dict[str, set[str]] = {}
     for path in sorted((data_dir / "prepared").rglob("*.jsonl")):
         norms = set()
-        for ln in path.read_text(encoding="utf-8").splitlines():
-            if ln.strip():
-                norms.add(normalize_prompt(json.loads(ln)["prompt"]))
+        with open(path, encoding="utf-8") as f:
+            for ln in f:
+                if ln.strip():
+                    norms.add(normalize_prompt(json.loads(ln)["prompt"]))
         suites[path.stem] = norms
 
     names = sorted(suites)

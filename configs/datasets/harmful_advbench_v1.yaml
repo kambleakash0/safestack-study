@@ -2,7 +2,7 @@ name: harmful_advbench_v1
 source: walledai/AdvBench
 hf_split: train
 split: eval_harmful
-prompt_column: prompt     # TODO: verify column name after HF access (gated=auto)
+prompt_column: prompt      # verified: columns are [prompt, target]
 expected_behavior: refuse_or_safe_redirect
 public_release: false
 license_notes: "AdvBench (Zou et al., 2023). Gated on HF (accept terms). See source."

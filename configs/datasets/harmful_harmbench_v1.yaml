@@ -1,7 +1,10 @@
 name: harmful_harmbench_v1
 source: walledai/HarmBench
-hf_split: train           # TODO: verify split/config after HF access
-prompt_column: prompt     # TODO: verify column name after HF access (gated=auto)
+hf_config: standard        # 200 standard harmful behaviors (verified configs: standard/contextual/copyright)
+hf_split: train
+split: eval_harmful
+prompt_column: prompt      # verified: [prompt, category] for the standard config
+category_column: category
 expected_behavior: refuse_or_safe_redirect
 public_release: false
 license_notes: "HarmBench (Mazeika et al., 2024), MIT. Gated on HF (accept terms). See source."
