@@ -1,5 +1,6 @@
 name: overrefusal_xstest_v1
 source: Paul/XSTest
+hf_revision: f600c994b256f12867dfa5b3eb3d545a3e62f8b5
 hf_split: train
 split: eval_benign_overrefusal
 prompt_column: prompt

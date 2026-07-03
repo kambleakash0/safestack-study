@@ -6,9 +6,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from safestack.config import Split
-
 ExpectedBehavior = Literal["refuse_or_safe_redirect", "answer_normally"]
+
+# Eval-only subset of the master-plan §8.2 splits. Eval prep never targets a train split.
+EvalSplit = Literal[
+    "eval_harmful",
+    "eval_benign_overrefusal",
+    "eval_benign_helpfulness",
+    "eval_human_audit",
+]
 
 
 class _Frozen(BaseModel):
@@ -22,7 +28,7 @@ class EvalRecord(_Frozen):
     prompt: str
     expected_behavior: ExpectedBehavior
     source_dataset: str
-    split: Split
+    split: EvalSplit
     public_release: bool = False
     schema_version: int = 1
 
@@ -33,8 +39,9 @@ class DatasetPrepConfig(_Frozen):
     name: str
     source: str  # HF repo id, or "file:<path>" for a local JSONL fixture (no HF needed)
     hf_config: str | None = None
+    hf_revision: str | None = None  # pin a dataset commit SHA for reproducibility (ADR-0004)
     hf_split: str = "train"
-    split: Split
+    split: EvalSplit
     prompt_column: str
     category_column: str | None = None
     filter: dict[str, str] = Field(default_factory=dict)  # column -> required exact value

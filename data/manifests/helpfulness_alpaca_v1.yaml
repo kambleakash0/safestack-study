@@ -6,6 +6,8 @@ num_examples: 200
 split: eval_benign_helpfulness
 hash: sha256:31d0aa39d2f6d31294ee86a8b4829b24483434c6edcf8c01236ff30b93444d66
 preprocessing:
+- hf_revision=dce01c9b08f87459cf36a430d809084718273017
+- hf_config=none
 - 'filter={''input'': ''''}'
 - normalized_whitespace_case_exact_dedup
 - public_release=True

@@ -94,7 +94,10 @@ def test_prepare_harmful_sanitizes_samples(tmp_path):
     prepare(cfg, data_dir=data_dir, today=DAY)
     samples = (data_dir / "public_sanitized_examples" / "harmful_test_v1.jsonl").read_text()
     assert "SENSITIVE HARMFUL TEXT" not in samples  # redacted
-    assert "sha256:" in samples
+    import hashlib
+
+    expected = "sha256:" + hashlib.sha256(b"SENSITIVE HARMFUL TEXT").hexdigest()
+    assert json.loads(samples.splitlines()[0])["prompt"] == expected  # exact hash, not a substring
 
 
 def test_validate_detects_tamper(tmp_path):
@@ -157,3 +160,65 @@ def test_shipped_dataset_configs_are_valid():
     assert paths, "no dataset configs found"
     for path in paths:
         DatasetPrepConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+def test_category_column_extraction():
+    rows = [{"prompt": "p1", "type": "homonyms"}, {"prompt": "p2"}]  # 2nd row: missing category
+    cfg = _cfg(
+        name="cat_v1",
+        split="eval_benign_overrefusal",
+        prompt_column="prompt",
+        filter={},
+        category_column="type",
+    )
+    recs = prepare_records(rows, cfg)
+    assert recs[0].category == "homonyms"
+    assert recs[1].category == ""  # missing column falls back to empty
+
+
+def _repo_root():
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[1]
+
+
+def _config_public_release():
+    out = {}
+    for c in (_repo_root() / "configs" / "datasets").glob("*.yaml"):
+        d = yaml.safe_load(c.read_text(encoding="utf-8"))
+        out[d["name"]] = d.get("public_release", False)
+    return out
+
+
+def test_committed_sanitized_samples_respect_public_release():
+    # Responsible-use invariant on the REAL committed artifacts: any public_release=false
+    # suite must have every tracked sample prompt hashed (no raw harmful text committed).
+    pr = _config_public_release()
+    for sample_file in (_repo_root() / "data" / "public_sanitized_examples").glob("*.jsonl"):
+        public = pr.get(sample_file.stem, False)
+        for ln in sample_file.read_text(encoding="utf-8").splitlines():
+            if ln.strip() and not public:
+                prompt = json.loads(ln)["prompt"]
+                assert prompt.startswith("sha256:"), (
+                    f"{sample_file.name}: raw prompt in tracked sample"
+                )
+
+
+def test_harmful_configs_are_private():
+    for c in (_repo_root() / "configs" / "datasets").glob("*.yaml"):
+        d = yaml.safe_load(c.read_text(encoding="utf-8"))
+        if d.get("split") == "eval_harmful":
+            assert d.get("public_release") is False, (
+                f"{c.name}: eval_harmful must be public_release: false"
+            )
+
+
+def test_committed_manifests_load():
+    from safestack.registry import load_manifest
+
+    manifests = sorted((_repo_root() / "data" / "manifests").glob("*.yaml"))
+    assert manifests, "no committed manifests"
+    for m in manifests:
+        man = load_manifest(m)
+        assert man.hash.startswith("sha256:")
+        assert man.num_examples > 0

@@ -1,5 +1,6 @@
 name: harmful_advbench_v1
 source: walledai/AdvBench
+hf_revision: 9d4730540082fa4017450b65ca1c0e1d8d30446e
 hf_split: train
 split: eval_harmful
 prompt_column: prompt      # verified: columns are [prompt, target]

@@ -1,5 +1,6 @@
 name: helpfulness_alpaca_v1
 source: tatsu-lab/alpaca
+hf_revision: dce01c9b08f87459cf36a430d809084718273017
 hf_split: train
 split: eval_benign_helpfulness
 prompt_column: instruction

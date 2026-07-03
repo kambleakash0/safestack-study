@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from datetime import date
 from pathlib import Path
@@ -17,6 +18,10 @@ import yaml
 from safestack.config import DatasetManifest
 from safestack.datasets.schema import DatasetPrepConfig, EvalRecord
 from safestack.datasets.sources import load_source
+
+SUPPORTED_PREP_SCHEMA_VERSION = 1
+_DEFAULT_DATA_DIR = "data"
+log = logging.getLogger("safestack")
 
 
 def normalize_prompt(text: str) -> str:
@@ -68,11 +73,26 @@ def _sanitize(rec: EvalRecord) -> dict:
 def prepare(
     cfg: DatasetPrepConfig,
     *,
-    data_dir: str | Path = "data",
+    data_dir: str | Path = _DEFAULT_DATA_DIR,
     today: date | None = None,
 ) -> DatasetManifest:
-    records = prepare_records(load_source(cfg), cfg)
+    if cfg.schema_version != SUPPORTED_PREP_SCHEMA_VERSION:
+        raise ValueError(
+            f"{cfg.name}: unsupported prep schema_version {cfg.schema_version} "
+            f"(expected {SUPPORTED_PREP_SCHEMA_VERSION})"
+        )
     data_dir = Path(data_dir)
+    if not cfg.public_release and data_dir != Path(_DEFAULT_DATA_DIR):
+        log.warning(
+            "prepare(%s): public_release=false with non-default data_dir %s -- raw prompts are "
+            "written under %s/prepared/, which is only gitignored at the default 'data/'. Ensure "
+            "that path is not committed.",
+            cfg.name,
+            data_dir,
+            data_dir,
+        )
+
+    records = prepare_records(load_source(cfg), cfg)
 
     # Full prepared records -> gitignored data/prepared/ (never committed).
     prepared_path = data_dir / "prepared" / cfg.split / f"{cfg.name}.jsonl"
@@ -97,6 +117,8 @@ def prepare(
         split=cfg.split,
         hash=digest,
         preprocessing=[
+            f"hf_revision={cfg.hf_revision}",
+            f"hf_config={cfg.hf_config}" if cfg.hf_config else "hf_config=none",
             f"filter={cfg.filter}" if cfg.filter else "filter=none",
             "normalized_whitespace_case_exact_dedup",
             f"public_release={cfg.public_release}",

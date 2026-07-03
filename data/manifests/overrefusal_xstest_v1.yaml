@@ -6,6 +6,8 @@ num_examples: 250
 split: eval_benign_overrefusal
 hash: sha256:24bd1fad943d9a368632b4b97d6d7f52aabda05a757c03c4dc8c87d3f6928fb6
 preprocessing:
+- hf_revision=f600c994b256f12867dfa5b3eb3d545a3e62f8b5
+- hf_config=none
 - 'filter={''label'': ''safe''}'
 - normalized_whitespace_case_exact_dedup
 - public_release=True

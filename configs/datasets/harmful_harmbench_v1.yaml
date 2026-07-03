@@ -1,6 +1,7 @@
 name: harmful_harmbench_v1
 source: walledai/HarmBench
 hf_config: standard        # 200 standard harmful behaviors (verified configs: standard/contextual/copyright)
+hf_revision: fb6c2afd5a2a943d701d6db3efab87d077e81be5
 hf_split: train
 split: eval_harmful
 prompt_column: prompt      # verified: [prompt, category] for the standard config

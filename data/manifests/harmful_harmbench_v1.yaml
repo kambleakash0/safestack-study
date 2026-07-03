@@ -7,6 +7,8 @@ num_examples: 200
 split: eval_harmful
 hash: sha256:1aabe6806d144c5d86ac03d64c77a6ba76f9446c0dc98833d300f24959f4b82f
 preprocessing:
+- hf_revision=fb6c2afd5a2a943d701d6db3efab87d077e81be5
+- hf_config=standard
 - filter=none
 - normalized_whitespace_case_exact_dedup
 - public_release=False

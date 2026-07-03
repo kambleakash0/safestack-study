@@ -45,8 +45,8 @@ control, §8.7), split discipline (§8.2), manifests (§8.3), and responsible-us
    (across manifests) reports prompt overlap between suites (leakage signal).
 6. **Dependencies**: `datasets` behind a `[data]` extra (kept out of base). The pipeline
    core is torch-free and HF-free; only real `prepare` from the Hub needs the extra.
-7. **Split discipline**: `EvalRecord.split` is constrained to the eval splits by the same
-   `Split` literal (§8.2). The three suites map to `eval_harmful`,
+7. **Split discipline**: `EvalRecord.split` is constrained to the eval splits by an
+   eval-only `EvalSplit` literal (§8.2). The three suites map to `eval_harmful`,
    `eval_benign_overrefusal`, `eval_benign_helpfulness`.
 
 ## Consequences
