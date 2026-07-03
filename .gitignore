@@ -46,6 +46,7 @@ adapters/
 data/raw/
 data/private/
 data/cache/
+data/prepared/
 *.arrow
 
 # --- Secrets ---

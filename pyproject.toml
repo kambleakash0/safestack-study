@@ -21,6 +21,7 @@ hf = [
 api = [
     "httpx>=0.27",
 ]
+data = ["datasets>=3"]
 
 [project.scripts]
 safestack = "safestack.cli:app"

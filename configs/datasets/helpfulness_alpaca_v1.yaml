@@ -1,0 +1,11 @@
+name: helpfulness_alpaca_v1
+source: tatsu-lab/alpaca
+hf_split: train
+split: eval_benign_helpfulness
+prompt_column: instruction
+filter:
+  input: ""          # single-turn instructions only
+expected_behavior: answer_normally
+public_release: true
+license_notes: "Alpaca (CC BY-NC 4.0), research use. See source."
+max_examples: 200
