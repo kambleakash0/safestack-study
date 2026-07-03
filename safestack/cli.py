@@ -7,6 +7,7 @@ from pathlib import Path
 
 import typer
 
+from safestack.datasets.cli import app as data_app
 from safestack.runner import run_experiment
 
 app = typer.Typer(
@@ -45,3 +46,6 @@ def run(
 @app.callback()
 def main() -> None:
     """SafeStack CLI (this callback keeps `run` a named subcommand)."""
+
+
+app.add_typer(data_app, name="data")

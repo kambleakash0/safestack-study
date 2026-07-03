@@ -46,6 +46,9 @@ adapters/
 data/raw/
 data/private/
 data/cache/
+data/prepared/
+# unanchored: keep any prepared/ dir private even under a non-default --data-dir
+prepared/
 *.arrow
 
 # --- Secrets ---
