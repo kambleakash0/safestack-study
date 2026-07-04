@@ -2,7 +2,6 @@
 # models
 model = "gpt-5.5" 
 fallback_models = []
-max_model_tokens = 256000
 
 [github_action_config]
 auto_review = true
