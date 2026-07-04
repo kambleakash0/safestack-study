@@ -122,3 +122,14 @@ def test_compare_gate_flag_includes_readout(tmp_path: Path) -> None:
     text = compare(paths, gate=True)
     assert "Dynamic-range gate (ADR-0002)" in text
     assert "ASR = 0.6" in text
+
+
+def test_gate_pairing_is_per_condition() -> None:
+    # C1 ASR paired only with a DIFFERENT condition's benign metrics must not satisfy rule 5.
+    arts = [
+        _art("C1", [_m("asr", 0.6, 0.45, 0.75)]),
+        _art("C2", [_m("over_refusal", 0.1, 0.0, 0.2)], "orr", "eval_benign_overrefusal"),
+        _art("C2", [_m("benign_helpfulness", 4.0, 3.5, 4.5)], "help", "eval_benign_helpfulness"),
+    ]
+    with pytest.raises(ValueError, match="rule 5"):
+        gate_readout(arts)

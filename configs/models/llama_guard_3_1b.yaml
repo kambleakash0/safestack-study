@@ -1,7 +1,7 @@
 model_id: llama_guard_3_1b
 backend: hf_local
 checkpoint: meta-llama/Llama-Guard-3-1B
-revision: main                 # pin to a commit SHA before the Colab C1 run (ADR-0004)
+revision: acf7aafa60f0410f8f42b1fa35e077d705892029  # pinned SHA of Llama-Guard-3-1B (ADR-0004)
 chat_template: llama_guard     # non-"none" -> the gateway applies the model's moderation template
 dtype: bfloat16
 device: cuda
