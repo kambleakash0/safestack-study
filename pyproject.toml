@@ -3,7 +3,7 @@ name = "safestack"
 version = "0.0.1"
 description = "Defense-in-depth evaluation for safety-aligned open LLMs"
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "pydantic>=2.9",
     "pyyaml>=6.0.2",
@@ -41,7 +41,7 @@ packages = ["safestack"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
