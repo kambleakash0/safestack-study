@@ -1,0 +1,9 @@
+model_id: llama_guard_3_1b
+backend: hf_local
+checkpoint: meta-llama/Llama-Guard-3-1B
+revision: main                 # pin to a commit SHA before the Colab C1 run (ADR-0004)
+chat_template: llama_guard     # non-"none" -> the gateway applies the model's moderation template
+dtype: bfloat16
+device: cuda
+notes: "Safety judge (ASR only, ADR-0004 rule 4). Gated=manual on HF; runs on a Colab GPU as a
+  separate cached pass, never co-resident with the policy model (ADR-0003). ~2-3 GB."

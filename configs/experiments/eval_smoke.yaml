@@ -1,0 +1,14 @@
+experiment_id: eval_smoke
+description: "Phase-1b eval-harness smoke: fixture suites through the mock gateway + mock judges."
+condition_id: C1
+model: mock
+suites: [harmful_fixture, overrefusal_fixture, helpfulness_fixture]
+safety_judge: mock_judge
+helpfulness_judge: mock_judge
+decode:
+  max_new_tokens: 32
+  seed: 0
+bootstrap_n: 1000
+tags: [phase-1b, smoke]
+# Run against the committed fixtures:
+#   safestack eval run -c configs/experiments/eval_smoke.yaml --data-dir tests/fixtures/eval_suites

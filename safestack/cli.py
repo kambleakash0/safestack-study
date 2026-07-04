@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from safestack.datasets.cli import app as data_app
+from safestack.eval.cli import app as eval_app
 from safestack.runner import run_experiment
 
 app = typer.Typer(
@@ -49,3 +50,5 @@ def main() -> None:
 
 
 app.add_typer(data_app, name="data")
+
+app.add_typer(eval_app, name="eval")

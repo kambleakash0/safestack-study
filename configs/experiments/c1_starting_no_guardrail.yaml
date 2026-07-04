@@ -1,0 +1,25 @@
+experiment_id: c1_starting_no_guardrail
+description: "C1 baseline: starting Mistral-7B-Instruct-v0.3, no guardrail. Real ASR / over-refusal
+  / helpfulness with 95% CIs, for the ADR-0002 dynamic-range gate decision (before any fine-tuning)."
+condition_id: C1
+model: mistral_7b_instruct
+suites:
+  - harmful_advbench_v1
+  - harmful_harmbench_v1
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256
+  seed: 0
+judge_prompt_version: v1
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-1b, C1, baseline]
+# Colab: safestack eval run  -c configs/experiments/c1_starting_no_guardrail.yaml --backend hf_local
+#        safestack eval judge --run runs/<id> --kind all
+#        safestack eval report --run runs/<id>   (per suite)
+#        safestack eval compare --metrics reports/metrics/*.json --gate

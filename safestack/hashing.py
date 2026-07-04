@@ -53,3 +53,25 @@ def content_hash(
     }
     digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
     return f"sha256:{digest}"
+
+
+def judge_content_hash(
+    generation_content_hash: str,
+    judge_fingerprint: dict,
+    judge_prompt_version: str,
+    judge_role: str,
+) -> str:
+    """Identity of a judge label: (which generation, which judge, which prompt, which role).
+
+    A new judge prompt version or a new judge model revision mints a NEW key, so a stale
+    label is never silently reused when the judge changes (ADR-0007 decision 4).
+    """
+    payload = {
+        "cache_schema_version": CACHE_SCHEMA_VERSION,
+        "generation_content_hash": generation_content_hash,
+        "judge_fingerprint": judge_fingerprint,
+        "judge_prompt_version": judge_prompt_version,
+        "judge_role": judge_role,
+    }
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"

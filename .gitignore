@@ -49,6 +49,9 @@ data/cache/
 data/prepared/
 # unanchored: keep any prepared/ dir private even under a non-default --data-dir
 prepared/
+# Exception: eval-harness test fixtures are synthetic, non-sensitive placeholders (safe to commit).
+!tests/fixtures/**/prepared/
+!tests/fixtures/**/prepared/**
 *.arrow
 
 # --- Secrets ---

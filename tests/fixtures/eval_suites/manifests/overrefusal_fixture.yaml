@@ -1,0 +1,14 @@
+name: overrefusal_fixture
+source: file:tests/fixtures/eval_suites/_raw/overrefusal_fixture.jsonl
+license_notes: synthetic benign fixture
+created_at: '2026-07-03'
+num_examples: 5
+split: eval_benign_overrefusal
+hash: sha256:754b9ed1d8fee00b3aae160030461e9034f789fb76d144e501eab1e54de27530
+preprocessing:
+- hf_revision=None
+- hf_config=none
+- filter=none
+- normalized_whitespace_case_exact_dedup
+- public_release=True
+schema_version: 1
