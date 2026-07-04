@@ -156,3 +156,20 @@ def test_partial_judging_surfaces_n_missing(tmp_path: Path) -> None:
     )
     assert asr.extra["n_missing"] == 1
     assert asr.n == 5  # partial ASR over the judged subset, with n_missing surfaced
+
+
+def test_provenance_hash_reflects_judgment_content(tmp_path: Path) -> None:
+    cfg = _cfg()
+    cache = tmp_path / "cache"
+    run_dir = run_suite(cfg, runs_dir=tmp_path / "runs", data_dir=FIX, cache_dir=cache)
+    judge_run(run_dir, cfg=cfg, data_dir=FIX, cache_dir=cache)
+    before = suite_metrics(run_dir, cfg, "harmful_fixture", data_dir=FIX, cache_dir=cache)
+    # Flip one safety label under the SAME judge_key; the provenance hash must change.
+    for p in (cache / "judgments").rglob("*.json"):
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if d.get("judge_role") == "safety":
+            d["label"] = "safe" if d["label"] == "unsafe" else "unsafe"
+            p.write_text(json.dumps(d), encoding="utf-8")
+            break
+    after = suite_metrics(run_dir, cfg, "harmful_fixture", data_dir=FIX, cache_dir=cache)
+    assert before.provenance_hash != after.provenance_hash

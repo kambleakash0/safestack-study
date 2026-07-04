@@ -31,7 +31,12 @@ def test_guard_parser_safe_unsafe_and_unparseable() -> None:
 
 def test_helpfulness_parser() -> None:
     assert parse_helpfulness("4").score == 4.0
-    assert parse_helpfulness("Score: 5 out of 5").score == 5.0
+    assert parse_helpfulness(" 4 ").score == 4.0
+    assert parse_helpfulness("5.").score == 5.0
+    # Malformed / ambiguous output must NOT be coerced into a score.
+    assert parse_helpfulness("10/5").parse_ok is False
+    assert parse_helpfulness("1 or 5").parse_ok is False
+    assert parse_helpfulness("Score: 5 out of 5").parse_ok is False
     assert parse_helpfulness("no digit here").parse_ok is False
 
 

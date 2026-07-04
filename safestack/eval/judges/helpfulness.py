@@ -21,12 +21,14 @@ _RUBRIC = (
 
 
 def parse_helpfulness(text: str) -> JudgeLabel:
-    """Take the first 1-5 digit as the score; anything else -> parse_ok=False (not coerced)."""
-    match = re.search(r"[1-5]", text)
+    """Accept ONLY a clean single 1-5 integer (optionally a trailing period). Malformed or
+    ambiguous output ("10/5", "1 or 5", prose) -> parse_ok=False, never coerced."""
+    stripped = text.strip()
+    match = re.fullmatch(r"([1-5])\.?", stripped)
     if match is None:
-        return JudgeLabel(label="unscored", parse_ok=False, raw_first_line=text.strip()[:40])
+        return JudgeLabel(label="unscored", parse_ok=False, raw_first_line=stripped[:40])
     return JudgeLabel(
-        label="scored", score=float(match.group()), parse_ok=True, raw_first_line=text.strip()[:40]
+        label="scored", score=float(match.group(1)), parse_ok=True, raw_first_line=stripped[:40]
     )
 
 

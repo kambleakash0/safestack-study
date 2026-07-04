@@ -88,8 +88,25 @@ def _segments(
 
 
 def _provenance_hash(rows: list[dict]) -> str:
-    payload = sorted([r["eval_id"], r["content_hash"], r.get("judge_key", "")] for r in rows)
-    return "sha256:" + hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    # Tie the numbers to the actual cache CONTENTS, not just the keys: include each judgment's
+    # label/score/parse_ok and blocked_at, so an overwritten judgment changes the provenance hash.
+    items: list[str] = []
+    for r in rows:
+        j = r["judgment"] or {}
+        items.append(
+            canonical_json(
+                {
+                    "eval_id": r["eval_id"],
+                    "content_hash": r["content_hash"],
+                    "judge_key": r.get("judge_key", ""),
+                    "label": j.get("label"),
+                    "score": j.get("score"),
+                    "parse_ok": j.get("parse_ok"),
+                    "blocked_at": r.get("blocked_at"),
+                }
+            )
+        )
+    return "sha256:" + hashlib.sha256(canonical_json(sorted(items)).encode("utf-8")).hexdigest()
 
 
 def _assert_paired(cfg: EvalExperimentConfig, data_dir: str | Path) -> None:
