@@ -52,6 +52,9 @@ prepared/
 # Exception: eval-harness test fixtures are synthetic, non-sensitive placeholders (safe to commit).
 !tests/fixtures/**/prepared/
 !tests/fixtures/**/prepared/**
+# unanchored: keep any generation/judgment cache (raw prompts + responses) private even under a
+# non-default --data-dir or --cache-dir
+cache/
 *.arrow
 
 # --- Secrets ---

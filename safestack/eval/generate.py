@@ -24,7 +24,7 @@ from safestack.eval.config import EvalExperimentConfig, load_eval_config
 from safestack.hashing import canonical_json, content_hash, model_fingerprint
 from safestack.model_gateway import GenerationRequest, build_gateway
 from safestack.registry import DEFAULT_MODELS_DIR, resolve_model_spec
-from safestack.runner import _git_commit
+from safestack.runner import git_commit
 from safestack.tracing import RunRecord, TraceRecord, TraceWriter, hash_text, redact
 
 log = logging.getLogger("safestack")
@@ -130,6 +130,7 @@ def run_suite(
         gateway.close()  # free the policy model before any judge pass loads (ADR-0003)
 
     config_dump = cfg.model_dump(mode="json")
+    accelerator, library_versions = _runtime_provenance()
     writer.write_run(
         RunRecord(
             run_id=run_id,
@@ -141,10 +142,12 @@ def run_suite(
             package_version=__version__,
             python_version=_platform.python_version(),
             platform=_platform.platform(),
-            git_commit=_git_commit(),
+            git_commit=git_commit(),
             n_generations=n_hits + n_misses,
             n_cache_hits=n_hits,
             n_cache_misses=n_misses,
+            accelerator=accelerator,
+            library_versions=library_versions,
         )
     )
     log.info(
@@ -157,3 +160,27 @@ def run_suite(
         n_misses,
     )
     return writer.run_dir
+
+
+def _runtime_provenance() -> tuple[str | None, dict]:
+    """The GPU name + torch/transformers/bitsandbytes versions for run.json (ADR-0007 decision 6).
+
+    Returns (None, {}) on the torch-free base install so the mock / CPU path stays torch-free.
+    """
+    try:
+        import torch
+    except ImportError:
+        return (None, {})
+    versions = {"torch": torch.__version__}
+    for name in ("transformers", "bitsandbytes"):
+        try:
+            versions[name] = __import__(name).__version__
+        except Exception:
+            pass
+    accelerator = None
+    try:
+        if torch.cuda.is_available():
+            accelerator = torch.cuda.get_device_name(0)
+    except Exception:
+        pass
+    return (accelerator, versions)

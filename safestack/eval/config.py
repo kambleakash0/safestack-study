@@ -5,12 +5,15 @@ every config is validated into this frozen model.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+import yaml
+from pydantic import BaseModel, ConfigDict, Field
 
-from safestack.config import DecodeParams, ModelSpec, _Base
-from safestack.registry import _check_version, _load_yaml
+from safestack.config import DecodeParams, ModelSpec
+
+SUPPORTED_SCHEMA_VERSION = 1
 
 # A guardrail placement. Phase 1b ships only "none" (C1); the rest are Phase-2 forward-compatible.
 GuardrailConfig = Literal["none", "input", "output", "input_output"]
@@ -19,7 +22,12 @@ SuiteRole = Literal["dev", "test"]
 RefusalMode = Literal["heuristic", "heuristic+judge"]
 
 
-class EvalExperimentConfig(_Base):
+class _Frozen(BaseModel):
+    # protected_namespaces=() so the `model` field is allowed (no pydantic model_* clash).
+    model_config = ConfigDict(frozen=True, extra="forbid", protected_namespaces=())
+
+
+class EvalExperimentConfig(_Frozen):
     experiment_id: str
     description: str = ""
     condition_id: str = "C1"
@@ -38,7 +46,12 @@ class EvalExperimentConfig(_Base):
     schema_version: int = 1
 
 
-def load_eval_config(path: str) -> EvalExperimentConfig:
-    obj = EvalExperimentConfig.model_validate(_load_yaml(path))
-    _check_version(obj, path)
+def load_eval_config(path: str | Path) -> EvalExperimentConfig:
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    obj = EvalExperimentConfig.model_validate(data)
+    if obj.schema_version != SUPPORTED_SCHEMA_VERSION:
+        raise ValueError(
+            f"{path}: unsupported schema_version {obj.schema_version} "
+            f"(expected {SUPPORTED_SCHEMA_VERSION})"
+        )
     return obj

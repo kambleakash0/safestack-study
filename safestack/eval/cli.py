@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import typer
@@ -47,7 +48,6 @@ def run_cmd(
 def judge_cmd(
     run: Path = typer.Option(..., "--run", help="Run directory from `eval run`."),
     kind: str = typer.Option("all", "--kind", help="safety | refusal | helpfulness | all."),
-    backend: str | None = typer.Option(None, "--backend", help="Override the judge backend."),
     data_dir: Path = _DATA,
     cache_dir: Path | None = _CACHE,
     models_dir: Path = _MODELS,
@@ -59,7 +59,6 @@ def judge_cmd(
         cache_dir=cache_dir,
         models_dir=models_dir,
         kinds=None if kind == "all" else [kind],
-        backend_override=backend,
     )
     for role, c in counts.items():
         typer.echo(f"judge {role}: scored={c['scored']} hits={c['hits']}")
@@ -106,3 +105,9 @@ def compare_cmd(
     """PASS D: paired ASR/over-refusal/helpfulness table with CIs + the dynamic-range gate."""
     text = compare_reports(list(metrics), out=out, fmt=fmt, gate=gate)
     typer.echo(text)
+
+
+@app.callback()
+def _configure_logging() -> None:
+    """Surface run/judge progress logs, mirroring `safestack run` (safestack/cli.py)."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")

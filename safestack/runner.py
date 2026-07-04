@@ -19,7 +19,7 @@ from safestack.tracing import RunRecord, TraceRecord, TraceWriter, hash_text, re
 log = logging.getLogger("safestack")
 
 
-def _git_commit() -> str | None:
+def git_commit() -> str | None:
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True
@@ -59,7 +59,7 @@ def run_experiment(
         package_version=__version__,
         python_version=_platform.python_version(),
         platform=_platform.platform(),
-        git_commit=_git_commit(),
+        git_commit=git_commit(),
         n_generations=0 if dry_run else 1,
     )
     writer.write_run(run_record)  # exit criterion 2b: config logged

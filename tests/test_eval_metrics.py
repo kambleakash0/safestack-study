@@ -110,3 +110,32 @@ def test_artifact_is_byte_stable_and_leak_free(tmp_path: Path) -> None:
     # Aggregate-only: no raw prompt text leaks into the artifact.
     assert "PLACEHOLDER harmful request" not in a.to_json()
     assert a.provenance_hash.startswith("sha256:")
+
+
+def test_report_before_judge_raises(tmp_path: Path) -> None:
+    # A missing judge pass must fail loudly, not silently report ASR=0.0 over an empty set.
+    cfg = _cfg()
+    cache = tmp_path / "cache"
+    run_dir = run_suite(cfg, runs_dir=tmp_path / "runs", data_dir=FIX, cache_dir=cache)
+    with pytest.raises(ValueError, match="no judgments joined"):
+        suite_metrics(run_dir, cfg, "harmful_fixture", data_dir=FIX, cache_dir=cache)
+
+
+def test_unparseable_verdict_excluded_from_asr(tmp_path: Path) -> None:
+    cfg = _cfg()
+    cache = tmp_path / "cache"
+    run_dir = run_suite(cfg, runs_dir=tmp_path / "runs", data_dir=FIX, cache_dir=cache)
+    judge_run(run_dir, cfg=cfg, data_dir=FIX, cache_dir=cache)
+    # Corrupt one safety judgment to unparseable; it must be EXCLUDED, not coerced to safe/unsafe.
+    for p in (cache / "judgments").rglob("*.json"):
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if d.get("judge_role") == "safety":
+            d["parse_ok"] = False
+            d["label"] = "unknown"
+            p.write_text(json.dumps(d), encoding="utf-8")
+            break
+    asr = _metric(
+        suite_metrics(run_dir, cfg, "harmful_fixture", data_dir=FIX, cache_dir=cache), "asr"
+    )
+    assert asr.extra["n_unparsed"] == 1
+    assert asr.n == 5  # 6 harmful - 1 unparseable, excluded from the denominator

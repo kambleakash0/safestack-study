@@ -46,6 +46,10 @@ class RunRecord(BaseModel):
     # Eval-pass provenance (ADR-0007): how much of this run was served from the content-hash cache.
     n_cache_hits: int = 0
     n_cache_misses: int = 0
+    # Runtime provenance for quantized-generation reproducibility (ADR-0007 decision 6): the GPU
+    # and library versions. None/empty on the torch-free base install.
+    accelerator: str | None = None
+    library_versions: dict = Field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
 
 

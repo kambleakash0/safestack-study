@@ -131,7 +131,6 @@ def judge_run(
     cache_dir: str | Path | None = None,
     models_dir: str | Path = DEFAULT_MODELS_DIR,
     kinds: list[str] | None = None,
-    backend_override: str | None = None,
 ) -> dict[str, dict[str, int]]:
     """Score this run's generations. Returns ``{role: {scored, hits}}``. One judge resident at a
     time; each judge is closed before the next role's judge loads."""
@@ -159,7 +158,6 @@ def judge_run(
             _judge_spec_for_role(cfg, role),
             judge_prompt_version=cfg.judge_prompt_version,
             models_dir=models_dir,
-            backend_override=backend_override,
         )
         fingerprint = judge.fingerprint()
         scored = hits = 0
@@ -197,9 +195,6 @@ def judge_run(
     return counts
 
 
-__all__ = ["ROLES", "SPLIT_TO_ROLE", "Judge", "JudgeLabel", "build_judge", "judge_run"]
-
-
 def role_fingerprint(
     cfg: EvalExperimentConfig,
     role: str,
@@ -222,3 +217,14 @@ def role_fingerprint(
     return model_fingerprint(
         resolve_model_spec(spec, backend_override=backend_override, models_dir=models_dir)
     )
+
+
+__all__ = [
+    "ROLES",
+    "SPLIT_TO_ROLE",
+    "Judge",
+    "JudgeLabel",
+    "build_judge",
+    "judge_run",
+    "role_fingerprint",
+]
