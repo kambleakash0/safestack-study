@@ -1,0 +1,15 @@
+[config]
+# models
+model = "openai/gpt-5.5" 
+fallback_models = []
+max_model_tokens = 256000
+
+[github_action_config]
+auto_review = true
+auto_describe = true
+auto_improve = false
+handle_push_trigger = true
+
+[pr_code_suggestions]
+commitable_code_suggestions = true
+num_code_suggestions_per_chunk = 4
