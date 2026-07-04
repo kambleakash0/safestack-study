@@ -50,7 +50,7 @@ class HFLocalGateway(ModelGateway):
         self._model = AutoModelForCausalLM.from_pretrained(
             self.spec.checkpoint,
             revision=self.spec.revision,
-            torch_dtype=dtype,
+            dtype=dtype,  # canonical since transformers 4.56 (torch_dtype deprecated)
             quantization_config=quant_config,
             device_map="auto" if quant_config is not None else None,
         )

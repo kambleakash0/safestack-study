@@ -13,9 +13,12 @@ dependencies = [
 [project.optional-dependencies]
 # Local weight loading (tiny model on the laptop; the 7B on a cloud GPU later).
 # torch 2.6 is the first cp313 macOS-arm64 wheel; kept out of base so the mock path is torch-free.
+# transformers>=4.56 for the `dtype` kwarg (torch_dtype was renamed) and to allow 5.x, which lifts
+# the huggingface-hub<1.0 cap that conflicted with Colab's preinstalled stack. No upper cap: pin via
+# uv.lock locally, and run.json records the exact versions for cloud runs.
 hf = [
     "torch>=2.6",
-    "transformers>=4.46,<5",
+    "transformers>=4.56",
 ]
 # Hosted (OpenAI-compatible) inference backend, e.g. Mistral La Plateforme.
 api = [
