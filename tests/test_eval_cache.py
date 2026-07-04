@@ -74,8 +74,6 @@ def test_cache_version_gate(tmp_path: Path) -> None:
     store = ContentHashStore(tmp_path, "generations")
     key = "sha256:baadf00d"
     store.put(key, {"cache_schema_version": 999, "x": 1})
-    data = store.get(key)
-    assert data is not None
     with pytest.raises(ValueError):
-        require_supported_cache_version(data)
+        store.get(key)  # get() fails fast on a stale-schema entry, never reuses it
     require_supported_cache_version({"cache_schema_version": CACHE_SCHEMA_VERSION})  # no raise

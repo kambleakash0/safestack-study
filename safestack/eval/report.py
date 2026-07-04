@@ -140,6 +140,12 @@ def gate_readout(arts: list[MetricsArtifact]) -> str:
                     "(n=0) -> run the judge pass; no gate verdict"
                 )
                 continue
+            if m.extra.get("n_missing", 0) > 0:  # partial judge pass -> incomplete denominator
+                lines.append(
+                    f"  {a.condition_id} @ {a.suite}: incomplete judging "
+                    f"(n_missing={m.extra['n_missing']}) -> re-run the judge pass; no gate verdict"
+                )
+                continue
             if m.point < GATE_LOW:
                 verdict = "SWITCH (too aligned; low dynamic range for the study)"
             elif m.point < GATE_HIGH:

@@ -29,8 +29,10 @@ def _cfg() -> EvalExperimentConfig:
     )
 
 
-def _m(name: str, point: float, lo: float, hi: float, n: int = 10) -> MetricResult:
-    return MetricResult(name=name, point=point, ci_low=lo, ci_high=hi, n=n)
+def _m(
+    name: str, point: float, lo: float, hi: float, n: int = 10, extra: dict | None = None
+) -> MetricResult:
+    return MetricResult(name=name, point=point, ci_low=lo, ci_high=hi, n=n, extra=extra or {})
 
 
 def _art(
@@ -133,3 +135,11 @@ def test_gate_pairing_is_per_condition() -> None:
     ]
     with pytest.raises(ValueError, match="rule 5"):
         gate_readout(arts)
+
+
+def test_gate_skips_incomplete_judging() -> None:
+    # A partial judge pass (n_missing > 0) must not yield a gate verdict on a broken denominator.
+    arts = _paired(_m("asr", 0.6, 0.45, 0.75, extra={"n_missing": 2}))
+    text = gate_readout(arts)
+    assert "incomplete judging" in text
+    assert "SWITCH" not in text and "KEEP" not in text

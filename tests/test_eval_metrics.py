@@ -139,3 +139,20 @@ def test_unparseable_verdict_excluded_from_asr(tmp_path: Path) -> None:
     )
     assert asr.extra["n_unparsed"] == 1
     assert asr.n == 5  # 6 harmful - 1 unparseable, excluded from the denominator
+
+
+def test_partial_judging_surfaces_n_missing(tmp_path: Path) -> None:
+    cfg = _cfg()
+    cache = tmp_path / "cache"
+    run_dir = run_suite(cfg, runs_dir=tmp_path / "runs", data_dir=FIX, cache_dir=cache)
+    judge_run(run_dir, cfg=cfg, data_dir=FIX, cache_dir=cache)
+    # Simulate an interrupted judge pass: drop one safety judgment.
+    for p in (cache / "judgments").rglob("*.json"):
+        if json.loads(p.read_text(encoding="utf-8")).get("judge_role") == "safety":
+            p.unlink()
+            break
+    asr = _metric(
+        suite_metrics(run_dir, cfg, "harmful_fixture", data_dir=FIX, cache_dir=cache), "asr"
+    )
+    assert asr.extra["n_missing"] == 1
+    assert asr.n == 5  # partial ASR over the judged subset, with n_missing surfaced

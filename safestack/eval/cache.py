@@ -85,7 +85,11 @@ class ContentHashStore:
         path = self.path_for(key)
         if not path.exists():
             return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        # A cache_schema_version bump invalidates old entries: fail fast rather than let generate /
+        # judge / report silently reuse stale cache data (clear the cache dir and re-run).
+        require_supported_cache_version(data)
+        return data
 
     def put(self, key: str, obj: BaseModel | dict) -> Path:
         data = obj.model_dump(mode="json") if isinstance(obj, BaseModel) else obj
