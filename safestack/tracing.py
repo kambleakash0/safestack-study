@@ -2,7 +2,8 @@
 
 Records are a forward-compatible SUBSET of the master plan section 13.4 serving trace and
 use its field names, so later phases only ADD fields. Reserved fields are declared but not
-populated in Phase 0. Full text stays under gitignored `runs/` (RESPONSIBLE_USE section 6.2).
+populated until the phase that needs them. Full text stays under gitignored `runs/`
+(RESPONSIBLE_USE section 6.2).
 """
 
 from __future__ import annotations
@@ -42,6 +43,13 @@ class RunRecord(BaseModel):
     platform: str
     git_commit: str | None = None
     n_generations: int = 0
+    # Eval-pass provenance (ADR-0007): how much of this run was served from the content-hash cache.
+    n_cache_hits: int = 0
+    n_cache_misses: int = 0
+    # Runtime provenance for quantized-generation reproducibility (ADR-0007 decision 6): the GPU
+    # and library versions. None/empty on the torch-free base install.
+    accelerator: str | None = None
+    library_versions: dict = Field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
 
 
@@ -62,7 +70,13 @@ class TraceRecord(BaseModel):
     created_at: str = Field(default_factory=_utc_now)
     public_log: bool = False
     schema_version: int = SCHEMA_VERSION
-    # Reserved for later phases (section 13.4); declared, not populated in Phase 0.
+    # Eval-pass fields (ADR-0007): join keys back to the prepared suite. Optional so the Phase-0
+    # single-prompt runner path (which does not set them) is unaffected.
+    eval_id: str | None = None
+    suite: str | None = None
+    split: str | None = None
+    # Reserved for later phases (section 13.4); condition_id/guardrail_config/blocked_at are
+    # populated by the eval pass, the rest land with the Phase-2 guardrail tree.
     condition_id: str | None = None
     adapter_id: str | None = None
     guardrail_config: str | None = None
@@ -70,6 +84,9 @@ class TraceRecord(BaseModel):
     output_guardrail_ms: float | None = None
     total_ms: float | None = None
     blocked_at: str | None = None
+    # The response actually returned after the guardrail pipeline. Identity of `output` in C1
+    # (no guardrail); Phase-2 guardrails derive it (blocked -> canned redirect) and set blocked_at.
+    final_response: str | None = None
     judge_label: str | None = None
 
 

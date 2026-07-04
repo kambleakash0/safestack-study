@@ -1,7 +1,7 @@
 model_id: mistral_7b_instruct
 backend: hf_local
 checkpoint: mistralai/Mistral-7B-Instruct-v0.3   # target model, ADR-0002
-revision: main                                    # pin to a commit SHA in Phase 1
+revision: c170c708c41dac9275d15a8fff4eca08d52bab71  # pinned SHA of Mistral-7B-Instruct-v0.3 (ADR-0004)
 chat_template: mistral
 dtype: bfloat16
 device: cuda

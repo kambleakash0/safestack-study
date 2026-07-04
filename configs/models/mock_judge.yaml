@@ -1,0 +1,5 @@
+model_id: mock_judge
+backend: mock
+chat_template: none
+notes: "Deterministic offline judge stand-in (safety + helpfulness) for local smoke tests. Its
+  model_id differs from the policy card so the judgment cache key never collides with a generation."

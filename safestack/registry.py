@@ -66,10 +66,24 @@ def resolve_model_ref(
     backend_override: str | None = None,
     models_dir: str | Path = DEFAULT_MODELS_DIR,
 ) -> ModelSpec:
+    return resolve_model_spec(cfg.model, backend_override=backend_override, models_dir=models_dir)
+
+
+def resolve_model_spec(
+    model_ref: str | ModelSpec,
+    backend_override: str | None = None,
+    models_dir: str | Path = DEFAULT_MODELS_DIR,
+) -> ModelSpec:
+    """Resolve a model reference (a registry model_id or an inline ModelSpec) to a ModelSpec,
+    applying an optional backend override.
+
+    Decoupled from any single config so an eval condition can resolve its policy model and its
+    judge models independently (ADR-0007).
+    """
     spec = (
-        cfg.model
-        if isinstance(cfg.model, ModelSpec)
-        else load_model(cfg.model, models_dir=models_dir)
+        model_ref
+        if isinstance(model_ref, ModelSpec)
+        else load_model(model_ref, models_dir=models_dir)
     )
     if backend_override and backend_override != spec.backend:
         spec = ModelSpec.model_validate({**spec.model_dump(), "backend": backend_override})

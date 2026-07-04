@@ -1,0 +1,11 @@
+model_id: helpfulness_judge_mistral
+backend: hf_local
+checkpoint: mistralai/Mistral-7B-Instruct-v0.3
+revision: c170c708c41dac9275d15a8fff4eca08d52bab71  # pinned SHA of Mistral-7B-Instruct-v0.3 (ADR-0004)
+chat_template: mistral
+dtype: bfloat16
+device: cuda
+notes: "Rubric helpfulness judge (benign helpfulness). Distinct from Llama-Guard and the refusal
+  detector (rule 4). LIMITATION (ADR-0007): shares the policy family (Mistral-7B) -> report as a
+  stated judge/policy overlap; swap for an independent instruct model to remove it. Loads only
+  after the policy and Guard are closed (never two large models resident)."

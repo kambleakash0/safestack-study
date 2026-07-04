@@ -20,8 +20,6 @@ class HFLocalGateway(ModelGateway):
         super().__init__(spec)
         if spec.adapter is not None:
             raise NotImplementedError("LoRA adapters land in Phase 3 (ADR-0003); not in Phase 0.")
-        if spec.quantization is not None:
-            raise NotImplementedError("Quantized loading lands later (ADR-0003); not in Phase 0.")
         self._model = None
         self._tokenizer = None
         self._device = None
@@ -48,9 +46,16 @@ class HFLocalGateway(ModelGateway):
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.spec.checkpoint, revision=self.spec.revision
         )
+        quant_config = self._quantization_config(dtype)
         self._model = AutoModelForCausalLM.from_pretrained(
-            self.spec.checkpoint, revision=self.spec.revision, torch_dtype=dtype
-        ).to(self._device)
+            self.spec.checkpoint,
+            revision=self.spec.revision,
+            torch_dtype=dtype,
+            quantization_config=quant_config,
+            device_map="auto" if quant_config is not None else None,
+        )
+        if quant_config is None:  # bitsandbytes places the model itself via device_map
+            self._model = self._model.to(self._device)
         self._model.eval()
 
     def _render(self, messages) -> str:
@@ -108,3 +113,24 @@ class HFLocalGateway(ModelGateway):
                 torch.mps.empty_cache()
         except ImportError:
             pass
+
+    def _quantization_config(self, dtype):
+        """4-bit / 8-bit bitsandbytes config for CUDA eval on a smaller GPU (ADR-0007 decision 6).
+
+        Returns None (full-precision) when no quantization is requested; the A100 baseline runs
+        bf16. bitsandbytes is CUDA-only, so this path is only reached behind the cuda host-guard.
+        """
+        if not self.spec.quantization:
+            return None
+        from transformers import BitsAndBytesConfig
+
+        q = self.spec.quantization.lower()
+        if q in ("4bit", "nf4", "bnb-4bit"):
+            return BitsAndBytesConfig(
+                load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=dtype
+            )
+        if q in ("8bit", "bnb-8bit"):
+            return BitsAndBytesConfig(load_in_8bit=True)
+        raise ValueError(
+            f"unknown quantization '{self.spec.quantization}' for model '{self.spec.model_id}'"
+        )
