@@ -15,7 +15,7 @@ suite_role: test               # locked test: final numbers only, no prompt tuni
 decode:
   max_new_tokens: 256
   seed: 0
-judge_prompt_version: v1
+judge_prompt_version: v2  # v2: fixes the Llama-Guard empty-conversation bug (content parts)
 bootstrap_seed: 0
 bootstrap_n: 10000
 tags: [phase-1b, C1, baseline]
