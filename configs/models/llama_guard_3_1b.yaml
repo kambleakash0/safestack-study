@@ -3,6 +3,7 @@ backend: hf_local
 checkpoint: meta-llama/Llama-Guard-3-1B
 revision: acf7aafa60f0410f8f42b1fa35e077d705892029  # pinned SHA of Llama-Guard-3-1B (ADR-0004)
 chat_template: llama_guard     # non-"none" -> the gateway applies the model's moderation template
+chat_content_format: parts     # Llama-3.2 template needs typed content parts, else the turn is empty
 dtype: bfloat16
 device: cuda
 notes: "Safety judge (ASR only, ADR-0004 rule 4). Gated=manual on HF; runs on a Colab GPU as a

@@ -15,6 +15,16 @@ from safestack.hashing import content_hash, model_fingerprint
 from safestack.model_gateway.base import GenerationRequest, GenerationResult, ModelGateway
 
 
+def _to_chat_messages(messages, content_format: str) -> list[dict]:
+    """Shape messages for apply_chat_template. Llama-3.2 / Llama-Guard templates need content as a
+    list of typed parts, or they render an EMPTY turn; older templates take a plain string."""
+    if content_format == "parts":
+        return [
+            {"role": m.role, "content": [{"type": "text", "text": m.content}]} for m in messages
+        ]
+    return [{"role": m.role, "content": m.content} for m in messages]
+
+
 class HFLocalGateway(ModelGateway):
     def __init__(self, spec: ModelSpec) -> None:
         super().__init__(spec)
@@ -61,7 +71,7 @@ class HFLocalGateway(ModelGateway):
     def _render(self, messages) -> str:
         if self.spec.chat_template != "none":
             return self._tokenizer.apply_chat_template(
-                [{"role": m.role, "content": m.content} for m in messages],
+                _to_chat_messages(messages, self.spec.chat_content_format),
                 tokenize=False,
                 add_generation_prompt=True,
             )

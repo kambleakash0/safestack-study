@@ -57,6 +57,10 @@ class ModelSpec(_Base):
     adapter: str | None = None
     quantization: str | None = None
     chat_template: str = "none"
+    # How message content is handed to apply_chat_template. Llama-3.2 / Llama-Guard templates
+    # require "parts" (a list of typed content blocks) or they render an EMPTY turn; older
+    # string-based templates (e.g. Mistral) use "string". Excluded from the content hash.
+    chat_content_format: Literal["string", "parts"] = "string"
     dtype: str = "float32"
     device: Literal["cpu", "mps", "cuda", "auto"] = "cpu"
     # API-backend fields (used only when backend == "api"); excluded from the content hash.
