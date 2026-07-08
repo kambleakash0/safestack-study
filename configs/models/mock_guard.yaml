@@ -1,0 +1,5 @@
+model_id: mock_guard
+backend: mock
+chat_template: none
+notes: "Deterministic offline OUTPUT-guardrail stand-in (ADR-0009). Its model_id differs from the
+  safety judge so the ADR-0004 rule-4 separation guard is satisfied; used for the local guardrail smoke."

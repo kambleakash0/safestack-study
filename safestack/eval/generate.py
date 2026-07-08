@@ -21,6 +21,7 @@ from safestack.datasets.validate import validate_manifest
 from safestack.determinism import set_seeds
 from safestack.eval.cache import ContentHashStore, GenerationCacheEntry
 from safestack.eval.config import EvalExperimentConfig, load_eval_config
+from safestack.guardrails import build_guardrail
 from safestack.hashing import canonical_json, content_hash, model_fingerprint
 from safestack.model_gateway import GenerationRequest, build_gateway
 from safestack.registry import DEFAULT_MODELS_DIR, resolve_model_spec
@@ -54,13 +55,24 @@ def run_suite(
     cache_dir: str | Path | None = None,
     limit: int | None = None,
 ) -> Path:
-    """Generate every prepared record of ``cfg.suites`` through the policy gateway, caching each
-    output by content hash and writing one trace per record. Returns the run directory."""
+    """Generate every prepared record of ``cfg.suites`` through the policy gateway (caching each
+    output by content hash), then run the configured guardrail as a separate pass and write one
+    trace per record with its blocked_at / final_response decision. Returns the run directory.
+
+    The trace write is DEFERRED until after ``gateway.close()`` so the output guardrail scores the
+    cached generations while the policy model is unloaded (ADR-0003); ``safestack/eval/metrics.py``
+    is unchanged because it already reads ``blocked_at`` off the trace (ADR-0009).
+    """
     cfg = config if isinstance(config, EvalExperimentConfig) else load_eval_config(str(config))
     data_dir = Path(data_dir)
     cache_dir = Path(cache_dir) if cache_dir is not None else data_dir / "cache"
     spec = resolve_model_spec(cfg.model, backend_override=backend_override, models_dir=models_dir)
     set_seeds(cfg.decode.seed)
+
+    # Build the guardrail up front so an unsupported placement or a rule-4 violation fails BEFORE
+    # generation; any heavy model it holds loads lazily in the output pass, after the policy is
+    # freed.
+    guardrail = build_guardrail(cfg, models_dir=models_dir, backend_override=backend_override)
 
     gen_store = ContentHashStore(cache_dir, "generations")
     fingerprint = model_fingerprint(spec)
@@ -69,6 +81,8 @@ def run_suite(
     writer = TraceWriter(Path(runs_dir) / run_id)
 
     n_hits = n_misses = 0
+    # (rec, content_hash, text, generation_ms) held for the deferred, post-guardrail trace write.
+    pending: list[tuple[EvalRecord, str, str, float | None]] = []
     gateway = build_gateway(spec)
     try:
         for suite in cfg.suites:
@@ -102,32 +116,46 @@ def run_suite(
                             generation_ms=result.generation_ms,
                         ),
                     )
-                    text = result.text
+                    text, gen_ms = result.text, result.generation_ms
                 else:
                     n_hits += 1
-                    text = cached["text"]
-                writer.append_trace(
-                    TraceRecord(
-                        trace_id=uuid.uuid4().hex,
-                        run_id=run_id,
-                        model_id=spec.model_id,
-                        backend=spec.backend,
-                        content_hash=ch,
-                        prompt=redact(rec.prompt, public_log=False),
-                        output=redact(text, public_log=False),
-                        decode=decode_dump,
-                        seed=cfg.decode.seed,
-                        eval_id=rec.eval_id,
-                        suite=rec.suite,
-                        split=rec.split,
-                        condition_id=cfg.condition_id,
-                        guardrail_config=cfg.guardrail_config,
-                        blocked_at=None,  # C1: no guardrail, nothing is ever blocked
-                        final_response=redact(text, public_log=False),  # identity transform in C1
-                    )
-                )
+                    text, gen_ms = cached["text"], cached.get("generation_ms")
+                pending.append((rec, ch, text, gen_ms))
     finally:
-        gateway.close()  # free the policy model before any judge pass loads (ADR-0003)
+        gateway.close()  # free the policy model before the guardrail / judge pass loads (ADR-0003)
+
+    # Output-guardrail pass: score the cached generations now the policy model is unloaded, writing
+    # each trace with its decision. NullGuardrail (C1 "none") passes everything through unchanged.
+    try:
+        for rec, ch, text, gen_ms in pending:
+            decision = guardrail.check_output(rec.prompt, text)
+            total_ms = (
+                None if decision.guardrail_ms is None else (gen_ms or 0.0) + decision.guardrail_ms
+            )
+            writer.append_trace(
+                TraceRecord(
+                    trace_id=uuid.uuid4().hex,
+                    run_id=run_id,
+                    model_id=spec.model_id,
+                    backend=spec.backend,
+                    content_hash=ch,
+                    prompt=redact(rec.prompt, public_log=False),
+                    output=redact(text, public_log=False),
+                    decode=decode_dump,
+                    seed=cfg.decode.seed,
+                    eval_id=rec.eval_id,
+                    suite=rec.suite,
+                    split=rec.split,
+                    condition_id=cfg.condition_id,
+                    guardrail_config=cfg.guardrail_config,
+                    blocked_at=decision.blocked_at,
+                    final_response=redact(decision.final_response, public_log=False),
+                    output_guardrail_ms=decision.guardrail_ms,
+                    total_ms=total_ms,
+                )
+            )
+    finally:
+        guardrail.close()
 
     config_dump = cfg.model_dump(mode="json")
     accelerator, library_versions = _runtime_provenance()
