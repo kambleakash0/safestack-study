@@ -1,0 +1,46 @@
+"""Phase 2 / C3 CLI smoke: the committed c3_smoke.yaml drives an output-guardrail run through the
+real CLI (mock policy + mock guardrail), proving block decisions reach traces.jsonl."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from safestack.cli import app
+
+runner = CliRunner()
+FIX = "tests/fixtures/eval_suites"
+CFG = "configs/experiments/c3_smoke.yaml"
+
+
+def test_cli_c3_output_guardrail_run(tmp_path: Path) -> None:
+    runs, cache = tmp_path / "runs", tmp_path / "cache"
+    r = runner.invoke(
+        app,
+        [
+            "eval",
+            "run",
+            "-c",
+            CFG,
+            "--data-dir",
+            FIX,
+            "--runs-dir",
+            str(runs),
+            "--cache-dir",
+            str(cache),
+        ],
+    )
+    assert r.exit_code == 0, r.output
+
+    run_dir = next(runs.iterdir())
+    traces = [
+        json.loads(ln)
+        for ln in (run_dir / "traces.jsonl").read_text(encoding="utf-8").splitlines()
+        if ln.strip()
+    ]
+    assert traces and all(t["guardrail_config"] == "output" for t in traces)
+    assert any(
+        t["blocked_at"] == "output" for t in traces
+    )  # the mock guardrail blocked >= 1 response

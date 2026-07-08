@@ -35,6 +35,10 @@ class EvalExperimentConfig(_Frozen):
     suites: list[str]  # manifest names spanning the eval splits
     decode: DecodeParams = Field(default_factory=DecodeParams)  # greedy default = locked-test mode
     guardrail_config: GuardrailConfig = "none"
+    # The guardrail classifier(s) for the input / output stage (ADR-0009), distinct from the safety
+    # judge (ADR-0004 rule 4). None until a Phase-2 condition sets one; mirrors safety_judge.
+    input_guardrail: str | ModelSpec | None = None
+    output_guardrail: str | ModelSpec | None = None
     suite_role: SuiteRole = "dev"
     safety_judge: str | ModelSpec | None = None
     refusal: RefusalMode = "heuristic"
