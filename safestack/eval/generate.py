@@ -82,8 +82,9 @@ def run_suite(
     writer = TraceWriter(Path(runs_dir) / run_id)
 
     n_hits = n_misses = 0
-    # (rec, content_hash, text, generation_ms) held for the deferred, post-guardrail trace write.
-    pending: list[tuple[EvalRecord, str, str, float | None]] = []
+    # Only (rec, content_hash) is held for the deferred trace write; the generation text is re-read
+    # from the cache in the output pass, so peak memory stays flat regardless of suite size.
+    pending: list[tuple[EvalRecord, str]] = []
     try:
         gateway = build_gateway(spec)
         try:
@@ -95,8 +96,7 @@ def run_suite(
                 for rec in records:
                     messages = (Message(role="user", content=rec.prompt),)
                     ch = content_hash(fingerprint, messages, cfg.decode)
-                    cached = gen_store.get(ch)
-                    if cached is None:
+                    if gen_store.get(ch) is None:
                         n_misses += 1
                         result = gateway.generate(
                             GenerationRequest(messages=messages, params=cfg.decode)
@@ -118,17 +118,18 @@ def run_suite(
                                 generation_ms=result.generation_ms,
                             ),
                         )
-                        text, gen_ms = result.text, result.generation_ms
                     else:
                         n_hits += 1
-                        text, gen_ms = cached["text"], cached.get("generation_ms")
-                    pending.append((rec, ch, text, gen_ms))
+                    pending.append((rec, ch))
         finally:
             gateway.close()  # free the policy model before the guardrail pass loads (ADR-0003)
 
-        # Output-guardrail pass: score the cached generations now the policy model is unloaded,
-        # writing each trace with its decision. NullGuardrail (C1 "none") passes everything through.
-        for rec, ch, text, gen_ms in pending:
+        # Output-guardrail pass: re-read each cached generation now the policy model is unloaded and
+        # write its trace with the guardrail decision. NullGuardrail (C1 "none") is a pass-through.
+        for rec, ch in pending:
+            gen = gen_store.get(ch)
+            text = gen["text"]
+            gen_ms = gen.get("generation_ms")
             decision = guardrail.check_output(rec.prompt, text)
             total_ms = (
                 gen_ms + decision.guardrail_ms
