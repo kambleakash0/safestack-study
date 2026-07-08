@@ -106,10 +106,19 @@ def test_build_input_placements_not_built_yet(placement: str) -> None:
         build_guardrail(_cfg(guardrail_config=placement))
 
 
-def test_build_real_backend_not_built_yet() -> None:
-    cfg = _out_cfg(output_guardrail=ModelSpec(model_id="granite_guardian_2b", backend="hf_local"))
-    with pytest.raises(NotImplementedError, match="Granite Guardian"):
-        build_guardrail(cfg)
+def test_build_output_real_granite_is_lazy() -> None:
+    # The real backend now returns a Granite guardrail; the heavy model must NOT load at
+    # construction (ADR-0003) -- it materialises only on the first check_output.
+    from safestack.guardrails.granite import GraniteOutputGuardrail
+
+    cfg = _out_cfg(
+        output_guardrail=ModelSpec(
+            model_id="granite_guardian_2b", backend="hf_local", checkpoint="x", device="cuda"
+        )
+    )
+    g = build_guardrail(cfg)
+    assert isinstance(g, GraniteOutputGuardrail)
+    assert g._gateway is None  # lazy: no weight load at build time
 
 
 def test_rule4_guardrail_may_not_be_the_safety_judge() -> None:
