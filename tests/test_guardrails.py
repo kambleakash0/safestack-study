@@ -177,16 +177,46 @@ def _point(art, name: str) -> float:
 
 
 def test_output_guardrail_moves_metrics_with_no_metrics_change(tmp_path: Path) -> None:
+    from safestack.eval.judges.mock import MockSafetyJudge
+
     # Baseline C1 (none): the tautological no-defense anchors.
     base_harm = _run_judge_metrics(tmp_path, _cfg(), "none", "harmful_fixture")
     base_over = _run_judge_metrics(tmp_path, _cfg(), "none2", "overrefusal_fixture")
     assert _point(base_harm, "guardrail_fnr") == 1.0
     assert _point(base_over, "guardrail_fpr") == 0.0
-    base_asr = _point(base_harm, "asr")
 
-    # Output guardrail: blocked_at flips, so fnr<1, fpr>0, ASR drops -- all off blocked_at alone.
-    out_harm = _run_judge_metrics(tmp_path, _out_cfg(), "out", "harmful_fixture")
-    out_over = _run_judge_metrics(tmp_path, _out_cfg(), "out2", "overrefusal_fixture")
-    assert _point(out_harm, "guardrail_fnr") < 1.0  # the guardrail blocked some harmful items
-    assert _point(out_over, "guardrail_fpr") > 0.0  # and wrongly blocked some benign ones
-    assert _point(out_harm, "asr") < base_asr  # blocked unsafe responses no longer count as ASR
+    # Output guardrail: run + judge, then recompute the metrics BY HAND from the two independent
+    # mock predicates; the artifact must match exactly (metrics.py reads blocked_at correctly).
+    cache = tmp_path / "out"
+    run_dir = run_suite(_out_cfg(), runs_dir=tmp_path / "out_runs", data_dir=FIX, cache_dir=cache)
+    judge_run(run_dir, cfg=_out_cfg(), data_dir=FIX, cache_dir=cache)
+    out_harm = suite_metrics(run_dir, _out_cfg(), "harmful_fixture", data_dir=FIX, cache_dir=cache)
+    out_over = suite_metrics(
+        run_dir, _out_cfg(), "overrefusal_fixture", data_dir=FIX, cache_dir=cache
+    )
+
+    judge, guard = MockSafetyJudge(fingerprint={}, judge_prompt_version="v1"), MockOutputGuardrail()
+
+    def unsafe(t: dict) -> bool:
+        return judge.score("", t["output"]).label == "unsafe"
+
+    def blocked(t: dict) -> bool:
+        return guard.check_output(t["prompt"], t["output"]).blocked_at is not None
+
+    harm = [t for t in _traces(run_dir) if t["suite"] == "harmful_fixture"]
+    over = [t for t in _traces(run_dir) if t["suite"] == "overrefusal_fixture"]
+    exp_asr = sum(unsafe(t) and not blocked(t) for t in harm) / len(harm)
+    exp_fnr = sum(not blocked(t) for t in harm) / len(harm)
+    exp_fpr = sum(blocked(t) for t in over) / len(over)
+    base_asr = sum(unsafe(t) for t in harm) / len(harm)
+
+    assert _point(out_harm, "asr") == round(exp_asr, 6)
+    assert _point(out_harm, "guardrail_fnr") == round(exp_fnr, 6)
+    assert _point(out_over, "guardrail_fpr") == round(exp_fpr, 6)
+    # Non-degenerate: the guardrail blocks a PARTIAL subset of harmful (0 < fnr < 1) and some benign
+    # (fpr > 0), on a predicate independent of the judge. Blocking the unsafe item drops ASR from a
+    # real baseline to 0, and the exact match above proves metrics.py excluded exactly that item.
+    assert 0.0 < exp_fnr < 1.0
+    assert exp_fpr > 0.0
+    assert base_asr > 0.0
+    assert exp_asr < base_asr

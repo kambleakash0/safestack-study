@@ -71,7 +71,8 @@ def run_suite(
 
     # Build the guardrail up front so an unsupported placement or a rule-4 violation fails BEFORE
     # generation; any heavy model it holds loads lazily in the output pass, after the policy is
-    # freed.
+    # freed. The outer try/finally below guarantees the guardrail is closed even on a generation
+    # error.
     guardrail = build_guardrail(cfg, models_dir=models_dir, backend_override=backend_override)
 
     gen_store = ContentHashStore(cache_dir, "generations")
@@ -83,54 +84,56 @@ def run_suite(
     n_hits = n_misses = 0
     # (rec, content_hash, text, generation_ms) held for the deferred, post-guardrail trace write.
     pending: list[tuple[EvalRecord, str, str, float | None]] = []
-    gateway = build_gateway(spec)
     try:
-        for suite in cfg.suites:
-            manifest = validate_manifest(_manifest_path(data_dir, suite), data_dir=data_dir)
-            records = _read_records(data_dir, manifest)
-            if limit is not None:
-                records = records[:limit]
-            for rec in records:
-                messages = (Message(role="user", content=rec.prompt),)
-                ch = content_hash(fingerprint, messages, cfg.decode)
-                cached = gen_store.get(ch)
-                if cached is None:
-                    n_misses += 1
-                    result = gateway.generate(
-                        GenerationRequest(messages=messages, params=cfg.decode)
-                    )
-                    gen_store.put(
-                        ch,
-                        GenerationCacheEntry(
-                            content_hash=ch,
-                            eval_id=rec.eval_id,
-                            suite=rec.suite,
-                            split=rec.split,
-                            model_fingerprint=fingerprint,
-                            decode=decode_dump,
-                            messages=[{"role": m.role, "content": m.content} for m in messages],
-                            text=result.text,
-                            input_tokens=result.input_tokens,
-                            output_tokens=result.output_tokens,
-                            finish_reason=result.finish_reason,
-                            generation_ms=result.generation_ms,
-                        ),
-                    )
-                    text, gen_ms = result.text, result.generation_ms
-                else:
-                    n_hits += 1
-                    text, gen_ms = cached["text"], cached.get("generation_ms")
-                pending.append((rec, ch, text, gen_ms))
-    finally:
-        gateway.close()  # free the policy model before the guardrail / judge pass loads (ADR-0003)
+        gateway = build_gateway(spec)
+        try:
+            for suite in cfg.suites:
+                manifest = validate_manifest(_manifest_path(data_dir, suite), data_dir=data_dir)
+                records = _read_records(data_dir, manifest)
+                if limit is not None:
+                    records = records[:limit]
+                for rec in records:
+                    messages = (Message(role="user", content=rec.prompt),)
+                    ch = content_hash(fingerprint, messages, cfg.decode)
+                    cached = gen_store.get(ch)
+                    if cached is None:
+                        n_misses += 1
+                        result = gateway.generate(
+                            GenerationRequest(messages=messages, params=cfg.decode)
+                        )
+                        gen_store.put(
+                            ch,
+                            GenerationCacheEntry(
+                                content_hash=ch,
+                                eval_id=rec.eval_id,
+                                suite=rec.suite,
+                                split=rec.split,
+                                model_fingerprint=fingerprint,
+                                decode=decode_dump,
+                                messages=[{"role": m.role, "content": m.content} for m in messages],
+                                text=result.text,
+                                input_tokens=result.input_tokens,
+                                output_tokens=result.output_tokens,
+                                finish_reason=result.finish_reason,
+                                generation_ms=result.generation_ms,
+                            ),
+                        )
+                        text, gen_ms = result.text, result.generation_ms
+                    else:
+                        n_hits += 1
+                        text, gen_ms = cached["text"], cached.get("generation_ms")
+                    pending.append((rec, ch, text, gen_ms))
+        finally:
+            gateway.close()  # free the policy model before the guardrail pass loads (ADR-0003)
 
-    # Output-guardrail pass: score the cached generations now the policy model is unloaded, writing
-    # each trace with its decision. NullGuardrail (C1 "none") passes everything through unchanged.
-    try:
+        # Output-guardrail pass: score the cached generations now the policy model is unloaded,
+        # writing each trace with its decision. NullGuardrail (C1 "none") passes everything through.
         for rec, ch, text, gen_ms in pending:
             decision = guardrail.check_output(rec.prompt, text)
             total_ms = (
-                None if decision.guardrail_ms is None else (gen_ms or 0.0) + decision.guardrail_ms
+                gen_ms + decision.guardrail_ms
+                if (gen_ms is not None and decision.guardrail_ms is not None)
+                else None
             )
             writer.append_trace(
                 TraceRecord(
@@ -155,7 +158,7 @@ def run_suite(
                 )
             )
     finally:
-        guardrail.close()
+        guardrail.close()  # always freed, even if generation raised before the output pass
 
     config_dump = cfg.model_dump(mode="json")
     accelerator, library_versions = _runtime_provenance()
