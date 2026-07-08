@@ -47,7 +47,7 @@ def build_guardrail(
     """Construct the output-stage guardrail for ``cfg``. Heavy models load lazily on first check, so
     this is safe to call before generation -- the model only materialises in the post-generation
     pass, after the policy model is freed (ADR-0003). ``backend == "mock"`` -> the deterministic
-    eval-layer mock; the real model is wired in a later slice."""
+    eval-layer mock; otherwise the real Granite Guardian output guardrail."""
     placement = cfg.guardrail_config
     if placement == "none":
         return NullGuardrail()
@@ -74,10 +74,9 @@ def build_guardrail(
         from safestack.guardrails.mock import MockOutputGuardrail
 
         return MockOutputGuardrail()
-    raise NotImplementedError(
-        "the real (Granite Guardian) output guardrail lands in the next slice; "
-        "use a backend='mock' guardrail card for now"
-    )
+    from safestack.guardrails.granite import GraniteOutputGuardrail
+
+    return GraniteOutputGuardrail(spec)
 
 
 __all__ = [

@@ -1,0 +1,12 @@
+model_id: granite_guardian_2b
+backend: hf_local
+checkpoint: ibm-granite/granite-guardian-3.1-2b
+revision: 81145486e85c6c82c01e759c0356d9d6da4d21a5  # verify on Colab/HF; pinned SHA (ADR-0004)
+chat_template: granite_guardian  # non-"none" -> the gateway applies the model's Guardian template
+chat_content_format: string      # Granite is text-only; IBM's reference passes plain-string content
+dtype: bfloat16
+device: cuda
+notes: "Output guardrail (ADR-0009). Granite Guardian 3.1-2b, Apache-2.0, ungated. Distinct model
+  from the Llama-Guard safety judge (ADR-0004 rule 4). Risk defaults to `harm` (the gateway does not
+  thread guardian_config). Loads lazily in the output pass, after the policy model is freed
+  (ADR-0003). ~5 GB bf16 on a Colab GPU."
