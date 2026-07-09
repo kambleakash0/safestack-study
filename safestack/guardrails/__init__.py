@@ -11,8 +11,8 @@ not built yet.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from safestack.eval.config import EvalExperimentConfig
 from safestack.guardrails.base import (
     SAFE_REFUSAL,
     Guardrail,
@@ -20,6 +20,11 @@ from safestack.guardrails.base import (
     NullGuardrail,
 )
 from safestack.registry import DEFAULT_MODELS_DIR, resolve_model_spec
+
+if TYPE_CHECKING:
+    # Lazy (typing-only) to break the guardrails <-> eval cycle: eval.config pulls in the eval
+    # package, whose generate module imports build_guardrail from here (annotations are strings).
+    from safestack.eval.config import EvalExperimentConfig
 
 
 def _assert_separation(cfg: EvalExperimentConfig, spec, judge_spec) -> None:

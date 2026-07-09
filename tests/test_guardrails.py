@@ -229,3 +229,19 @@ def test_output_guardrail_moves_metrics_with_no_metrics_change(tmp_path: Path) -
     assert exp_fpr > 0.0
     assert base_asr > 0.0
     assert exp_asr < base_asr
+
+
+def test_guardrails_import_first_has_no_circular_import() -> None:
+    # The Colab pre-flight imports safestack.guardrails before safestack.eval; that order must not
+    # trigger the eval.config <-> generate <-> guardrails circular import. A fresh interpreter is
+    # needed because pytest has already imported these modules in a cycle-safe order.
+    import subprocess
+    import sys
+
+    code = (
+        "from safestack.guardrails.base import SAFE_REFUSAL; "
+        "from safestack.guardrails.granite import GraniteOutputGuardrail; "
+        "from safestack.guardrails import build_guardrail"
+    )
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
