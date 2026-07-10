@@ -266,6 +266,60 @@ def test_c1_none_trace_invariants_unchanged(tmp_path: Path) -> None:
         assert t["total_ms"] is None
 
 
+def test_input_pass_writes_block_decisions_to_traces(tmp_path: Path) -> None:
+    run_dir = run_suite(
+        _in_cfg(), runs_dir=tmp_path / "runs", data_dir=FIX, cache_dir=tmp_path / "c"
+    )
+    traces = _traces(run_dir)
+    blocked = [t for t in traces if t["blocked_at"] is not None]
+    passed = [t for t in traces if t["blocked_at"] is None]
+    assert blocked and passed  # the mock input guardrail spans both across the fixtures
+    for t in traces:
+        assert t["condition_id"] == "C2"
+        assert t["guardrail_config"] == "input"
+        assert t["input_guardrail_ms"] == 0.0  # the input screen ran for every item (mock 0-cost)
+        assert t["output_guardrail_ms"] is None  # input-only: the output stage never runs
+    for t in blocked:
+        assert t["blocked_at"] == "input"
+        assert t["final_response"] == SAFE_REFUSAL  # blocked -> canned refusal
+        assert t["output"] != SAFE_REFUSAL  # the pre-block generation is preserved (private trace)
+        assert t["total_ms"] == 0.0  # input block never reaches generation (input_ms only)
+    for t in passed:
+        assert t["final_response"] == t["output"]  # passed -> cached generation unchanged
+        assert t["total_ms"] is not None  # passed input -> generation ran (gen + input)
+
+
+def test_input_block_short_circuits_output(tmp_path: Path) -> None:
+    # C4 (input_output): recompute the expected decision per item -- input predicate first, else
+    # the output predicate -- and assert the trace matches exactly, with the output stage short-
+    # circuited on an input block (output_guardrail_ms stays None).
+    run_dir = run_suite(
+        _io_cfg(), runs_dir=tmp_path / "runs", data_dir=FIX, cache_dir=tmp_path / "c"
+    )
+    guard = MockGuardrail(placement="input_output")
+    n_input = n_output = 0
+    for t in _traces(run_dir):
+        assert t["condition_id"] == "C4"
+        assert t["guardrail_config"] == "input_output"
+        if guard.check_input(t["prompt"]).blocked_at == "input":
+            n_input += 1
+            assert t["blocked_at"] == "input"
+            assert t["input_guardrail_ms"] == 0.0
+            assert t["output_guardrail_ms"] is None  # short-circuited: the output stage never ran
+            assert t["final_response"] == SAFE_REFUSAL
+        else:
+            expected_output = guard.check_output(t["prompt"], t["output"]).blocked_at
+            assert t["input_guardrail_ms"] == 0.0  # input ran first and passed
+            assert t["output_guardrail_ms"] == 0.0  # then the output stage ran
+            assert t["blocked_at"] == expected_output  # "output" or None
+            if expected_output == "output":
+                n_output += 1
+                assert t["final_response"] == SAFE_REFUSAL
+            else:
+                assert t["final_response"] == t["output"]
+    assert n_input >= 1 and n_output >= 1  # the fixtures exercise BOTH block stages
+
+
 # ---- metrics regression: NO metrics.py change ----
 
 
@@ -320,6 +374,53 @@ def test_output_guardrail_moves_metrics_with_no_metrics_change(tmp_path: Path) -
     # Non-degenerate: the guardrail blocks a PARTIAL subset of harmful (0 < fnr < 1) and some benign
     # (fpr > 0), on a predicate independent of the judge. Blocking the unsafe item drops ASR from a
     # real baseline to 0, and the exact match above proves metrics.py excluded exactly that item.
+    assert 0.0 < exp_fnr < 1.0
+    assert exp_fpr > 0.0
+    assert base_asr > 0.0
+    assert exp_asr < base_asr
+
+
+def test_input_guardrail_moves_metrics_with_no_metrics_change(tmp_path: Path) -> None:
+    from safestack.eval.judges.mock import MockSafetyJudge
+
+    # Baseline C1 (none): the tautological no-defense anchors.
+    base_harm = _run_judge_metrics(tmp_path, _cfg(), "none", "harmful_fixture")
+    base_over = _run_judge_metrics(tmp_path, _cfg(), "none2", "overrefusal_fixture")
+    assert _point(base_harm, "guardrail_fnr") == 1.0
+    assert _point(base_over, "guardrail_fpr") == 0.0
+
+    # Input guardrail: run + judge, then recompute the metrics BY HAND from the input predicate. The
+    # judge still scores the ORIGINAL generation, so ASR excludes the input-blocked items.
+    cache = tmp_path / "in"
+    run_dir = run_suite(_in_cfg(), runs_dir=tmp_path / "in_runs", data_dir=FIX, cache_dir=cache)
+    judge_run(run_dir, cfg=_in_cfg(), data_dir=FIX, cache_dir=cache)
+    in_harm = suite_metrics(run_dir, _in_cfg(), "harmful_fixture", data_dir=FIX, cache_dir=cache)
+    in_over = suite_metrics(
+        run_dir, _in_cfg(), "overrefusal_fixture", data_dir=FIX, cache_dir=cache
+    )
+
+    judge = MockSafetyJudge(fingerprint={}, judge_prompt_version="v1")
+    guard = MockGuardrail(placement="input")
+
+    def unsafe(t: dict) -> bool:
+        return judge.score("", t["output"]).label == "unsafe"
+
+    def blocked(t: dict) -> bool:
+        return guard.check_input(t["prompt"]).blocked_at is not None
+
+    harm = [t for t in _traces(run_dir) if t["suite"] == "harmful_fixture"]
+    over = [t for t in _traces(run_dir) if t["suite"] == "overrefusal_fixture"]
+    exp_asr = sum(unsafe(t) and not blocked(t) for t in harm) / len(harm)
+    exp_fnr = sum(not blocked(t) for t in harm) / len(harm)
+    exp_fpr = sum(blocked(t) for t in over) / len(over)
+    base_asr = sum(unsafe(t) for t in harm) / len(harm)
+
+    assert _point(in_harm, "asr") == round(exp_asr, 6)
+    assert _point(in_harm, "guardrail_fnr") == round(exp_fnr, 6)
+    assert _point(in_over, "guardrail_fpr") == round(exp_fpr, 6)
+    # Non-degenerate: the input guardrail blocks a PARTIAL subset of harmful (0 < fnr < 1) and some
+    # benign (fpr > 0), on a prompt-only predicate independent of the judge. Blocking an unsafe item
+    # drops ASR from the baseline, and the exact match proves metrics.py excluded exactly those.
     assert 0.0 < exp_fnr < 1.0
     assert exp_fpr > 0.0
     assert base_asr > 0.0

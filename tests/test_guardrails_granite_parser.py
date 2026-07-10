@@ -144,6 +144,16 @@ def test_c3_experiment_config_validates() -> None:
     assert cfg.safety_judge == "llama_guard_3_1b"  # distinct model from the guardrail (rule 4)
 
 
+def test_c2_experiment_config_validates() -> None:
+    cfg = load_eval_config("configs/experiments/c2_starting_input_guardrail.yaml")
+    assert cfg.condition_id == "C2"
+    assert cfg.guardrail_config == "input"
+    assert cfg.input_guardrail == "granite_guardian_2b"
+    assert cfg.output_guardrail is None  # C2 screens only the prompt (no output stage)
+    assert cfg.suite_role == "test"  # locked test
+    assert cfg.safety_judge == "llama_guard_3_1b"  # distinct model from the guardrail (rule 4)
+
+
 def test_rule4_granite_may_not_be_the_safety_judge() -> None:
     # Point output_guardrail at the safety judge -> circular, rejected (ADR-0004 rule 4).
     cfg = _out_cfg(

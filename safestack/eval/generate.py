@@ -45,6 +45,25 @@ def _read_records(data_dir: Path, manifest) -> list[EvalRecord]:
     return records
 
 
+def _pipeline_total_ms(
+    gen_ms: float | None,
+    input_ms: float | None,
+    output_ms: float | None,
+    blocked_at: str | None,
+) -> float | None:
+    """Served-path wall-time for one item. An INPUT block never reaches generation in a deployment,
+    so it costs only the input screen (``input_ms``); every other served path runs generation and
+    counts it plus whatever guardrail screens ran. Returns None when nothing was timed (C1 "none"),
+    matching the pre-guardrail C1 trace. Consistent with the shipped C3 (gen + output): generation
+    counts iff the served path reaches it."""
+    if blocked_at == "input":
+        return input_ms
+    screens = [ms for ms in (input_ms, output_ms) if ms is not None]
+    if gen_ms is None or not screens:
+        return None
+    return gen_ms + sum(screens)
+
+
 def run_suite(
     config: str | Path | EvalExperimentConfig,
     *,
@@ -59,9 +78,10 @@ def run_suite(
     output by content hash), then run the configured guardrail as a separate pass and write one
     trace per record with its blocked_at / final_response decision. Returns the run directory.
 
-    The trace write is DEFERRED until after ``gateway.close()`` so the output guardrail scores the
-    cached generations while the policy model is unloaded (ADR-0003); ``safestack/eval/metrics.py``
-    is unchanged because it already reads ``blocked_at`` off the trace (ADR-0009).
+    The trace write is DEFERRED until after ``gateway.close()`` so the guardrail scores the cached
+    generations while the policy model is unloaded (ADR-0003). The input pre-pass runs first and an
+    input block short-circuits the output check (the C4 control flow); ``safestack/eval/metrics.py``
+    is unchanged because it already reads ``blocked_at`` off the trace, input or output (ADR-0009).
     """
     cfg = config if isinstance(config, EvalExperimentConfig) else load_eval_config(str(config))
     data_dir = Path(data_dir)
@@ -124,18 +144,28 @@ def run_suite(
         finally:
             gateway.close()  # free the policy model before the guardrail pass loads (ADR-0003)
 
-        # Output-guardrail pass: re-read each cached generation now the policy model is unloaded and
-        # write its trace with the guardrail decision. NullGuardrail (C1 "none") is a pass-through.
+        # Guardrail pass: re-read each cached generation now the policy model is unloaded and write
+        # its trace with the guardrail decision. The input pre-pass runs first; an input block
+        # SHORT-CIRCUITS the output check (a refused prompt is never output-screened -- the C4
+        # flow). Each guardrail self-gates on placement, so C1 "none" passes both stages through.
         for rec, ch in pending:
             gen = gen_store.get(ch)
             text = gen["text"]
             gen_ms = gen.get("generation_ms")
-            decision = guardrail.check_output(rec.prompt, text)
-            total_ms = (
-                gen_ms + decision.guardrail_ms
-                if (gen_ms is not None and decision.guardrail_ms is not None)
-                else None
-            )
+            input_ms = output_ms = None
+            blocked_at = None
+            final_response = text  # a passing item returns the cached generation unchanged
+            in_dec = guardrail.check_input(rec.prompt)
+            input_ms = in_dec.guardrail_ms
+            if in_dec.blocked_at is not None:
+                blocked_at = in_dec.blocked_at
+                final_response = in_dec.final_response
+            else:
+                out_dec = guardrail.check_output(rec.prompt, text)
+                output_ms = out_dec.guardrail_ms
+                blocked_at = out_dec.blocked_at
+                final_response = out_dec.final_response
+            total_ms = _pipeline_total_ms(gen_ms, input_ms, output_ms, blocked_at)
             writer.append_trace(
                 TraceRecord(
                     trace_id=uuid.uuid4().hex,
@@ -152,9 +182,11 @@ def run_suite(
                     split=rec.split,
                     condition_id=cfg.condition_id,
                     guardrail_config=cfg.guardrail_config,
-                    blocked_at=decision.blocked_at,
-                    final_response=redact(decision.final_response, public_log=False),
-                    output_guardrail_ms=decision.guardrail_ms,
+                    blocked_at=blocked_at,
+                    final_response=redact(final_response, public_log=False),
+                    input_guardrail_ms=input_ms,
+                    output_guardrail_ms=output_ms,
+                    generation_ms=gen_ms,
                     total_ms=total_ms,
                 )
             )
