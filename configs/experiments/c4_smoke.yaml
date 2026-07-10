@@ -1,0 +1,19 @@
+experiment_id: c4_smoke
+description: "Phase-2 C4 guardrail-seam smoke: fixture suites through the mock policy + mock input
+  AND output guardrail (ADR-0009). Proves the config -> CLI -> input pre-pass -> short-circuit ->
+  output screen -> trace path with no VRAM."
+condition_id: C4
+model: mock
+suites: [harmful_fixture, overrefusal_fixture, helpfulness_fixture]
+safety_judge: mock_judge
+helpfulness_judge: mock_judge
+guardrail_config: input_output
+input_guardrail: mock_guard
+output_guardrail: mock_guard
+decode:
+  max_new_tokens: 32
+  seed: 0
+bootstrap_n: 1000
+tags: [phase-2, C4, smoke]
+# Run against the committed fixtures:
+#   safestack eval run -c configs/experiments/c4_smoke.yaml --data-dir tests/fixtures/eval_suites
