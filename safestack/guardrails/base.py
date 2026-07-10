@@ -18,6 +18,15 @@ from dataclasses import dataclass
 SAFE_REFUSAL = "I can't help with that request."
 
 
+# Stage membership for a placement -- the single source of truth for which stage(s) a guardrail
+# runs. A guardrail self-gates its check_input / check_output on its own ``placement`` against these
+# sets, so a wrongly-addressed stage is a safe pass-through, never a mis-screen (ADR-0009). C4
+# ("input_output") is a member of BOTH, so one composite guardrail screens the prompt and the
+# response over a single loaded model.
+INPUT_PLACEMENTS = frozenset({"input", "input_output"})
+OUTPUT_PLACEMENTS = frozenset({"output", "input_output"})
+
+
 @dataclass(frozen=True)
 class GuardrailDecision:
     """One guardrail verdict.
@@ -41,7 +50,11 @@ class Guardrail(ABC):
     placement: str = ""
 
     def check_input(self, prompt: str) -> GuardrailDecision:
-        """Screen the prompt before generation. Default: pass-through (no input stage)."""
+        """Screen the prompt before generation. Default: pass-through -- only an input-stage
+        guardrail overrides this. Contract: ``final_response`` is a sentinel meaningful ONLY when
+        ``blocked_at`` is set; on a PASS the caller substitutes the generation (run_suite defaults
+        final_response to the cached output), so the empty string returned here is never surfaced.
+        """
         return GuardrailDecision(blocked_at=None, final_response="", guardrail_ms=None)
 
     @abstractmethod

@@ -1,9 +1,11 @@
-"""Phase 2 / C3: guardrail subpackage + the output-guardrail seam (mock-first, base install).
+"""Phase 2 / C2-C4: guardrail subpackage + the composite input/output seam (mock-first, base
+install).
 
-Covers the Guardrail ABC + mock + build_guardrail factory (incl. the ADR-0004 rule-4 guard), the
-run_suite output pass (blocked_at / final_response / timings land on the trace), and a regression
-proving the metrics layer is untouched: with a real block pattern, guardrail_fpr>0, guardrail_fnr<1,
-and ASR drops vs the C1 baseline -- all read straight off blocked_at (ADR-0009).
+Covers the Guardrail ABC + composite mock (input + output stages, self-gated on placement) + the
+build_guardrail factory for all four placements (incl. the ADR-0004 rule-4 guard and the ADR-0009
+one-model input_output rule), the run_suite output pass (blocked_at / final_response / timings land
+on the trace), and a regression proving the metrics layer is untouched: with a real block pattern,
+guardrail_fpr>0, guardrail_fnr<1, and ASR drops vs the C1 baseline -- all read off blocked_at.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from safestack.guardrails import (
     NullGuardrail,
     build_guardrail,
 )
-from safestack.guardrails.mock import MockOutputGuardrail
+from safestack.guardrails.mock import MockGuardrail
 
 FIX = "tests/fixtures/eval_suites"
 SUITES = ["harmful_fixture", "overrefusal_fixture", "helpfulness_fixture"]
@@ -66,7 +68,7 @@ def test_null_guardrail_is_passthrough() -> None:
 
 
 def test_mock_output_guardrail_deterministic_and_spans() -> None:
-    g = MockOutputGuardrail()
+    g = MockGuardrail()
     responses = [f"response number {i}" for i in range(12)]
     decisions = [g.check_output("p", r) for r in responses]
     # Deterministic: a second pass gives identical verdicts.
@@ -84,6 +86,40 @@ def test_mock_output_guardrail_deterministic_and_spans() -> None:
             assert d.final_response == r  # passed responses are returned unchanged
 
 
+def test_mock_input_guardrail_deterministic_and_independent() -> None:
+    g = MockGuardrail(placement="input")
+    prompts = [f"prompt number {i}" for i in range(12)]
+    decisions = [g.check_input(p) for p in prompts]
+    # Deterministic: a second pass gives identical verdicts.
+    assert [d.blocked_at for d in decisions] == [g.check_input(p).blocked_at for p in prompts]
+    blocked = [d for d in decisions if d.blocked_at is not None]
+    passed = [d for d in decisions if d.blocked_at is None]
+    assert blocked and passed  # the input mock spans both outcomes over a normal set of prompts
+    for d in blocked:
+        assert d.blocked_at == "input"
+        assert d.final_response == SAFE_REFUSAL
+    for d in passed:
+        assert d.final_response == ""  # passing input check returns "" (sentinel, never surfaced)
+    # Independence: the input block-set differs from the output block-set over the same items, so
+    # the C4 short-circuit and the input-metrics regression are genuinely selective, not correlated.
+    og = MockGuardrail(placement="input_output")
+    in_blocks = [og.check_input(p).blocked_at is not None for p in prompts]
+    out_blocks = [og.check_output(p, f"resp {p}").blocked_at is not None for p in prompts]
+    assert in_blocks != out_blocks
+
+
+def test_mock_check_input_gated_when_output_only() -> None:
+    # An output-placement guardrail's input stage is a pass-through (mirrors C3: input never runs).
+    d = MockGuardrail(placement="output").check_input("anything")
+    assert d.blocked_at is None and d.final_response == "" and d.guardrail_ms is None
+
+
+def test_mock_check_output_gated_when_input_only() -> None:
+    # An input-placement guardrail's output stage is a pass-through (mirrors C2: output never runs).
+    d = MockGuardrail(placement="input").check_output("p", "a response")
+    assert d.blocked_at is None and d.final_response == "a response" and d.guardrail_ms is None
+
+
 # ---- factory ----
 
 
@@ -92,7 +128,8 @@ def test_build_none_returns_null() -> None:
 
 
 def test_build_output_mock() -> None:
-    assert isinstance(build_guardrail(_out_cfg()), MockOutputGuardrail)
+    g = build_guardrail(_out_cfg())
+    assert isinstance(g, MockGuardrail) and g.placement == "output"
 
 
 def test_build_output_requires_a_model() -> None:
@@ -100,16 +137,74 @@ def test_build_output_requires_a_model() -> None:
         build_guardrail(_cfg(guardrail_config="output"))
 
 
-@pytest.mark.parametrize("placement", ["input", "input_output"])
-def test_build_input_placements_not_built_yet(placement: str) -> None:
-    with pytest.raises(NotImplementedError, match="not built yet"):
-        build_guardrail(_cfg(guardrail_config=placement))
+def _in_cfg(**over: object) -> EvalExperimentConfig:
+    defaults: dict = dict(
+        condition_id="C2",
+        guardrail_config="input",
+        input_guardrail=ModelSpec(model_id="mock_guard", backend="mock"),
+    )
+    defaults.update(over)
+    return _cfg(**defaults)
+
+
+def _io_cfg(**over: object) -> EvalExperimentConfig:
+    defaults: dict = dict(
+        condition_id="C4",
+        guardrail_config="input_output",
+        input_guardrail=ModelSpec(model_id="mock_guard", backend="mock"),
+        output_guardrail=ModelSpec(model_id="mock_guard", backend="mock"),
+    )
+    defaults.update(over)
+    return _cfg(**defaults)
+
+
+def test_build_input_mock() -> None:
+    g = build_guardrail(_in_cfg())
+    assert isinstance(g, MockGuardrail) and g.placement == "input"
+
+
+def test_build_input_output_mock() -> None:
+    # C4: ONE composite guardrail serves both stages over a single model (ADR-0009 decision 2).
+    g = build_guardrail(_io_cfg())
+    assert isinstance(g, MockGuardrail) and g.placement == "input_output"
+
+
+def test_build_input_requires_a_model() -> None:
+    with pytest.raises(ValueError, match="requires cfg.input_guardrail"):
+        build_guardrail(_cfg(guardrail_config="input"))
+
+
+def test_build_input_output_requires_both_models() -> None:
+    with pytest.raises(ValueError, match="requires both"):
+        build_guardrail(
+            _cfg(
+                guardrail_config="input_output",
+                input_guardrail=ModelSpec(model_id="mock_guard", backend="mock"),
+            )
+        )
+
+
+def test_build_input_output_requires_same_model() -> None:
+    # Two different models for the two stages -> C4's single-composite invariant is violated.
+    with pytest.raises(ValueError, match="SAME model"):
+        build_guardrail(_io_cfg(output_guardrail=ModelSpec(model_id="other_guard", backend="mock")))
+
+
+def test_rule4_input_guardrail_may_not_be_the_safety_judge() -> None:
+    # Input guardrail == the safety judge -> circular, rejected (ADR-0004 rule 4).
+    with pytest.raises(ValueError, match="rule 4"):
+        build_guardrail(
+            _in_cfg(
+                safety_judge=ModelSpec(model_id="shared_guard", backend="mock"),
+                input_guardrail=ModelSpec(model_id="shared_guard", backend="mock"),
+            )
+        )
 
 
 def test_build_output_real_granite_is_lazy() -> None:
     # The real backend now returns a Granite guardrail; the heavy model must NOT load at
     # construction (ADR-0003) -- it materialises only on the first check_output.
-    from safestack.guardrails.granite import GraniteOutputGuardrail
+    from safestack.guardrails.granite import GraniteGuardrail
 
     cfg = _out_cfg(
         output_guardrail=ModelSpec(
@@ -117,7 +212,7 @@ def test_build_output_real_granite_is_lazy() -> None:
         )
     )
     g = build_guardrail(cfg)
-    assert isinstance(g, GraniteOutputGuardrail)
+    assert isinstance(g, GraniteGuardrail)
     assert g._gateway is None  # lazy: no weight load at build time
 
 
@@ -204,7 +299,7 @@ def test_output_guardrail_moves_metrics_with_no_metrics_change(tmp_path: Path) -
         run_dir, _out_cfg(), "overrefusal_fixture", data_dir=FIX, cache_dir=cache
     )
 
-    judge, guard = MockSafetyJudge(fingerprint={}, judge_prompt_version="v1"), MockOutputGuardrail()
+    judge, guard = MockSafetyJudge(fingerprint={}, judge_prompt_version="v1"), MockGuardrail()
 
     def unsafe(t: dict) -> bool:
         return judge.score("", t["output"]).label == "unsafe"
@@ -240,7 +335,7 @@ def test_guardrails_import_first_has_no_circular_import() -> None:
 
     code = (
         "from safestack.guardrails.base import SAFE_REFUSAL; "
-        "from safestack.guardrails.granite import GraniteOutputGuardrail; "
+        "from safestack.guardrails.granite import GraniteGuardrail; "
         "from safestack.guardrails import build_guardrail"
     )
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)

@@ -1,17 +1,23 @@
-"""Granite Guardian 3.1-2b OUTPUT guardrail (ADR-0009): screens the assistant RESPONSE after
-generation, as a separate cached pass, never VRAM-co-resident with the policy model (ADR-0003) and
-distinct from the Llama-Guard safety judge (ADR-0004 rule 4).
+"""Granite Guardian 3.1-2b guardrail (ADR-0009): screens the user PROMPT (input stage) and/or the
+assistant RESPONSE (output stage) around the frozen policy model, as separate cached passes, never
+VRAM-co-resident with the policy model (ADR-0003) and distinct from the Llama-Guard safety judge
+(ADR-0004 rule 4). ONE composite class screens either stage over a SINGLE lazily-loaded gateway, so
+C4 (input_output) loads the ~2.5B model once and serves both stages.
 
 Mirrors :class:`~safestack.eval.judges.llama_guard.LlamaGuardJudge`: build_gateway on the
-``granite_guardian_2b`` card, apply the model's built-in Guardian chat template over
-[user prompt, assistant response] so it classifies the assistant turn, then parse the verdict
-with a pure function. Granite emits ``Yes`` = risk detected (UNSAFE) and ``No`` = safe -- the
-OPPOSITE tokens and polarity to Llama-Guard's ``safe``/``unsafe`` -- so the parser keys on the exact
-first line and never coerces anything else. Risk defaults to ``harm`` (the gateway does not thread
-``guardian_config`` into apply_chat_template), the output-harm screen this condition wants. An
-unparseable verdict fails OPEN (passes the response through): an unreadable verdict must never
-fabricate a block that would flatter the measured ASR / FNR -- this is a measurement study, not a
-deployment (see ADR-0009 and the PR discussion).
+``granite_guardian_2b`` card, apply the model's built-in Guardian chat template over the turn(s) to
+classify (``[user]`` for the input stage, ``[user, assistant]`` for the output stage), then parse
+the verdict with a pure function. Granite emits ``Yes`` = risk detected (UNSAFE) and ``No`` = safe
+-- the OPPOSITE tokens and polarity to Llama-Guard's ``safe``/``unsafe`` -- so the parser keys on
+the exact first line and never coerces anything else. Risk defaults to ``harm`` (the gateway does
+not thread ``guardian_config`` into apply_chat_template), the harm screen this study wants at both
+stages. An unparseable verdict fails OPEN (passes the item through): an unreadable verdict must
+never fabricate a block that would flatter the measured ASR / FNR -- this is a measurement study,
+not a deployment (see ADR-0009 and the PR discussion).
+
+The stage a placement runs is decided by ``INPUT_PLACEMENTS`` / ``OUTPUT_PLACEMENTS`` (base): each
+``check_*`` self-gates on ``self.placement``, so an output-only guardrail's ``check_input`` is a
+pass-through that never loads weights, and an input-only guardrail's ``check_output`` likewise.
 """
 
 from __future__ import annotations
@@ -21,7 +27,13 @@ import time
 from dataclasses import dataclass
 
 from safestack.config import DecodeParams, Message
-from safestack.guardrails.base import SAFE_REFUSAL, Guardrail, GuardrailDecision
+from safestack.guardrails.base import (
+    INPUT_PLACEMENTS,
+    OUTPUT_PLACEMENTS,
+    SAFE_REFUSAL,
+    Guardrail,
+    GuardrailDecision,
+)
 
 log = logging.getLogger("safestack")
 
@@ -59,16 +71,17 @@ def parse_granite_output(text: str) -> GraniteVerdict:
     return GraniteVerdict(label="unknown", parse_ok=False, raw_first_line=lines[0])
 
 
-class GraniteOutputGuardrail(Guardrail):
-    """Output-stage guardrail backed by Granite Guardian. The heavy model loads LAZILY on the first
-    ``check_output`` (never in ``__init__``), so ``build_guardrail`` stays cheap -- the weights
-    only load in the post-generation pass, after the policy model is freed (ADR-0003)."""
+class GraniteGuardrail(Guardrail):
+    """Granite Guardian guardrail for the input and/or output stage. The heavy model loads LAZILY on
+    the first SCREENED check (never in ``__init__``), so ``build_guardrail`` stays cheap -- the
+    weights only load in the post-generation pass, after the policy model is freed (ADR-0003). One
+    instance serves whichever stage(s) ``placement`` selects; C4 (``input_output``) screens both the
+    prompt and the response through the SAME gateway, loaded once."""
 
-    placement = "output"
-
-    def __init__(self, spec) -> None:
+    def __init__(self, spec, *, placement: str = "output") -> None:
         self._spec = spec
         self._gateway = None
+        self.placement = placement
 
     def _gw(self):
         if self._gateway is None:
@@ -77,14 +90,15 @@ class GraniteOutputGuardrail(Guardrail):
             self._gateway = build_gateway(self._spec)
         return self._gateway
 
-    def check_output(self, prompt: str, response: str) -> GuardrailDecision:
+    def _screen(self, messages, *, stage: str, passthrough: str) -> GuardrailDecision:
+        """Render the turn(s), time the whole check, parse the Yes/No verdict, and turn it into a
+        decision: ``Yes`` -> block at ``stage`` (canned refusal); ``No`` -> pass through
+        ``passthrough``; unparseable -> fail OPEN (pass through, logged). Shared by both stages so
+        the render / time / parse / fail-open contract is identical for input and output."""
         from safestack.model_gateway import GenerationRequest
 
         request = GenerationRequest(
-            messages=(
-                Message(role="user", content=prompt),
-                Message(role="assistant", content=response),
-            ),
+            messages=messages,
             params=DecodeParams(max_new_tokens=20, seed=0),
         )
         # Wall-time of the whole check (render + generate + decode); on the FIRST call it also
@@ -96,18 +110,39 @@ class GraniteOutputGuardrail(Guardrail):
         verdict = parse_granite_output(text)
         if verdict.unsafe:
             return GuardrailDecision(
-                blocked_at="output",
+                blocked_at=stage,
                 final_response=SAFE_REFUSAL,
                 guardrail_ms=guardrail_ms,
             )
         if not verdict.parse_ok:
             # Fail OPEN: an unreadable verdict passes through rather than fabricating a block,
             # keeping the measured ASR / FNR honest (a measurement study, not a deployment).
-            log.warning("granite: unparseable verdict %r -> pass", verdict.raw_first_line)
+            log.warning(
+                "granite %s: unparseable verdict %r -> pass", stage, verdict.raw_first_line
+            )
         return GuardrailDecision(
             blocked_at=None,
-            final_response=response,
+            final_response=passthrough,
             guardrail_ms=guardrail_ms,
+        )
+
+    def check_input(self, prompt: str) -> GuardrailDecision:
+        if self.placement not in INPUT_PLACEMENTS:
+            return super().check_input(prompt)  # pass-through; never loads weights (ADR-0003)
+        return self._screen(
+            (Message(role="user", content=prompt),), stage="input", passthrough=""
+        )
+
+    def check_output(self, prompt: str, response: str) -> GuardrailDecision:
+        if self.placement not in OUTPUT_PLACEMENTS:
+            return GuardrailDecision(blocked_at=None, final_response=response, guardrail_ms=None)
+        return self._screen(
+            (
+                Message(role="user", content=prompt),
+                Message(role="assistant", content=response),
+            ),
+            stage="output",
+            passthrough=response,
         )
 
     def close(self) -> None:
