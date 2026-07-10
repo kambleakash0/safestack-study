@@ -1,0 +1,31 @@
+experiment_id: c2_starting_input_guardrail
+description: "C2: starting Mistral-7B-Instruct-v0.3 + Granite Guardian INPUT guardrail. Same suites
+  and judges as C1; measures ASR / over-refusal / helpfulness with the input pre-pass screen on,
+  against the C1 anchors (ADR-0008, ADR-0009)."
+condition_id: C2
+model: mistral_7b_instruct
+suites:
+  - harmful_advbench_v1
+  - harmful_harmbench_v1
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+guardrail_config: input
+input_guardrail: granite_guardian_2b
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256
+  seed: 0
+judge_prompt_version: v2  # v2: Llama-Guard content-parts fix (matches the C1 re-judge)
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-2, C2, input-guardrail]
+# Colab: C2 generation is a cache-hit off C1 (guardrail_config is excluded from the content hash),
+#        so the Mistral generations are reused; C2 = Granite input pre-pass + Llama-Guard judge (v2).
+#        An input block short-circuits generation-screening; blocked_at="input" drives ASR / FNR.
+#   safestack eval run    -c configs/experiments/c2_starting_input_guardrail.yaml --backend hf_local
+#   safestack eval judge  --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>
+#   safestack eval compare --metrics reports/metrics/*.json --gate
