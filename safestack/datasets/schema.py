@@ -45,6 +45,8 @@ class DatasetPrepConfig(_Frozen):
     split: EvalSplit
     prompt_column: str
     category_column: str | None = None
+    context_column: str | None = None  # if set, prepended to the prompt (contextual suites)
+    context_separator: str = "\n\n"  # joins context and prompt when context_column is set
     filter: dict[str, str] = Field(default_factory=dict)  # column -> required exact value
     expected_behavior: ExpectedBehavior
     public_release: bool = False

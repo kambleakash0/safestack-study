@@ -35,12 +35,24 @@ def eval_id(suite: str, prompt: str) -> str:
 def prepare_records(rows: list[dict], cfg: DatasetPrepConfig) -> list[EvalRecord]:
     seen: set[str] = set()
     out: list[EvalRecord] = []
+    n_no_context = 0
     for row in rows:
         if any(str(row.get(k)) != v for k, v in cfg.filter.items()):
             continue
         prompt = str(row.get(cfg.prompt_column) or "").strip()
         if not prompt:
             continue
+        if cfg.context_column:
+            # Contextual/dual-use suites (e.g. HarmBench contextual): the screened prompt is the
+            # FULL item -- the context passage prepended to the request -- so eval_id and the
+            # dedup/hash key are taken over the concatenation, not the behavior (ADR-0013 dec.1).
+            # A row lacking context is NOT a valid full item, so skip it rather than degrade to a
+            # behavior-only prompt (ADR-0013 dec.1: behavior-only is explicitly not used here).
+            context = str(row.get(cfg.context_column) or "").strip()
+            if not context:
+                n_no_context += 1
+                continue
+            prompt = f"{context}{cfg.context_separator}{prompt}"
         norm = normalize_prompt(prompt)
         if norm in seen:
             continue
@@ -60,6 +72,14 @@ def prepare_records(rows: list[dict], cfg: DatasetPrepConfig) -> list[EvalRecord
         )
         if cfg.max_examples is not None and len(out) >= cfg.max_examples:
             break
+    if n_no_context:
+        log.warning(
+            "prepare(%s): skipped %d row(s) with an empty '%s' (contextual suite needs the full "
+            "context+behavior item, ADR-0013 dec.1)",
+            cfg.name,
+            n_no_context,
+            cfg.context_column,
+        )
     return out
 
 
@@ -120,6 +140,14 @@ def prepare(
             f"hf_revision={cfg.hf_revision}",
             f"hf_config={cfg.hf_config}" if cfg.hf_config else "hf_config=none",
             f"filter={cfg.filter}" if cfg.filter else "filter=none",
+            *(
+                [
+                    f"context_column={cfg.context_column}",
+                    f"context_separator={cfg.context_separator!r}",
+                ]
+                if cfg.context_column
+                else []
+            ),
             "normalized_whitespace_case_exact_dedup",
             f"public_release={cfg.public_release}",
         ],
