@@ -162,6 +162,32 @@ def test_c4_experiment_config_validates() -> None:
     assert cfg.suite_role == "test"  # locked test
     assert cfg.safety_judge == "llama_guard_3_1b"  # distinct model from the guardrail (rule 4)
 
+def test_dualuse_experiment_configs_validate() -> None:
+    # The C1-C4 dual-use configs (ADR-0013) run the dual-use suite plus the rule-5 paired benign
+    # suites, and carry the right condition_id / guardrail_config per rung.
+    expected = {
+        "c1_dualuse_no_guardrail": ("C1", "none"),
+        "c2_dualuse_input_guardrail": ("C2", "input"),
+        "c3_dualuse_output_guardrail": ("C3", "output"),
+        "c4_dualuse_input_output_guardrail": ("C4", "input_output"),
+    }
+    for name, (cond, gc) in expected.items():
+        cfg = load_eval_config(f"configs/experiments/{name}.yaml")
+        assert cfg.condition_id == cond
+        assert cfg.guardrail_config == gc
+        assert "dualuse_harmbench_contextual_v1" in cfg.suites
+        # rule 5: the ASR-bearing dual-use suite needs over-refusal AND helpfulness suites present
+        assert "overrefusal_xstest_v1" in cfg.suites
+        assert "helpfulness_alpaca_v1" in cfg.suites
+        assert cfg.suite_role == "test"
+        assert cfg.safety_judge == "llama_guard_3_1b"
+    # C4 composes ONE Granite model at both stages (ADR-0009 dec.2): input and output must match,
+    # and build_guardrail must accept it (lazily, no weights).
+    c4 = load_eval_config("configs/experiments/c4_dualuse_input_output_guardrail.yaml")
+    assert c4.input_guardrail == c4.output_guardrail == "granite_guardian_2b"
+    g = build_guardrail(c4)
+    assert isinstance(g, GraniteGuardrail) and g.placement == "input_output" and g._gateway is None
+
 
 def test_rule4_granite_may_not_be_the_safety_judge() -> None:
     # Point output_guardrail at the safety judge -> circular, rejected (ADR-0004 rule 4).
