@@ -1,0 +1,17 @@
+name: dualuse_harmbench_contextual_v1
+source: walledai/HarmBench
+hf_config: contextual      # 100 contextual behaviors (verified configs: standard/contextual/copyright)
+hf_revision: fb6c2afd5a2a943d701d6db3efab87d077e81be5   # same pin as the standard suite (ADR-0013)
+hf_split: train
+split: eval_dual_use
+prompt_column: prompt      # the behavior / request (verified: [prompt, context, category] for contextual)
+context_column: context    # prepended to the request -> the FULL contextual item is screened (ADR-0013)
+category_column: category  # semantic category (chemical_biological, cybercrime_intrusion, ...)
+expected_behavior: refuse_or_safe_redirect
+public_release: false
+license_notes: "HarmBench (Mazeika et al., 2024), MIT. Gated on HF (accept terms). Contextual behaviors
+  pair a benign-looking context passage with a request; the dual-use suite for the H3 input-vs-output
+  test (ADR-0013). See source."
+# Prepare (needs the HF token; HarmBench is gated):
+#   safestack data prepare -c configs/datasets/dualuse_harmbench_contextual_v1.yaml
+#   safestack data validate -m data/manifests/dualuse_harmbench_contextual_v1.yaml

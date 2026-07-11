@@ -1,0 +1,18 @@
+name: dualuse_harmbench_contextual_v1
+source: walledai/HarmBench
+license_notes: HarmBench (Mazeika et al., 2024), MIT. Gated on HF (accept terms).
+  Contextual behaviors pair a benign-looking context passage with a request; the dual-use
+  suite for the H3 input-vs-output test (ADR-0013). See source.
+created_at: '2026-07-11'
+num_examples: 100
+split: eval_dual_use
+hash: sha256:52ced8ea6b4a8df5da1ad95793a00568ab517acb8a621df4e16f69dfede18ef7
+preprocessing:
+- hf_revision=fb6c2afd5a2a943d701d6db3efab87d077e81be5
+- hf_config=contextual
+- filter=none
+- context_column=context
+- context_separator='\n\n'
+- normalized_whitespace_case_exact_dedup
+- public_release=False
+schema_version: 1

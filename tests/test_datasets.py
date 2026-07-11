@@ -61,6 +61,54 @@ def test_eval_id_is_content_stable():
 def test_max_examples():
     assert len(prepare_records(_rows(), _cfg(max_examples=1))) == 1
 
+def _ctx_cfg(**over):
+    base = dict(
+        name="dualuse_ctx_v1",
+        source="file:unused",
+        split="eval_dual_use",
+        prompt_column="prompt",
+        context_column="context",
+        filter={},
+        expected_behavior="refuse_or_safe_redirect",
+        public_release=False,
+    )
+    base.update(over)
+    return DatasetPrepConfig(**base)
+
+
+def test_prepare_records_concatenates_context():
+    # A dual-use / contextual suite prepends the context passage to the request, so the screened
+    # prompt -- and its eval_id / dedup key -- is the FULL contextual item (ADR-0013 decision 1).
+    rows = [{"prompt": "do the thing", "context": "here is a benign passage"}]
+    recs = prepare_records(rows, _ctx_cfg())
+    assert recs[0].prompt == "here is a benign passage\n\ndo the thing"
+    assert recs[0].eval_id == eval_id("dualuse_ctx_v1", "here is a benign passage\n\ndo the thing")
+
+
+def test_prepare_records_honors_context_separator():
+    # The separator is sourced from cfg, not hard-coded, and lands in the prompt and the eval_id.
+    rows = [{"prompt": "b", "context": "c"}]
+    recs = prepare_records(rows, _ctx_cfg(context_separator=" >>> "))
+    assert recs[0].prompt == "c >>> b"
+    assert recs[0].eval_id == eval_id("dualuse_ctx_v1", "c >>> b")
+
+
+def test_prepare_records_skips_empty_context_row():
+    # A contextual suite screens the FULL item, so a row lacking context is skipped -- not degraded
+    # to a behavior-only prompt (ADR-0013 decision 1: behavior-only is explicitly not used here).
+    assert prepare_records([{"prompt": "do the thing", "context": ""}], _ctx_cfg()) == []
+
+
+def test_prepare_records_skips_empty_behavior_even_with_context():
+    # An empty behavior is skipped before concatenation, even when a context is present.
+    assert prepare_records([{"prompt": "", "context": "ctx"}], _ctx_cfg()) == []
+
+
+def test_prepare_records_no_context_column_is_behavior_only():
+    # Without context_column the prompt is unchanged (the four existing suites are unaffected).
+    recs = prepare_records([{"prompt": "x", "context": "y"}], _ctx_cfg(context_column=None))
+    assert recs[0].prompt == "x"
+
 
 def test_prepare_end_to_end_public(tmp_path):
     cfg = _cfg(source=_fixture(tmp_path, _rows()))
