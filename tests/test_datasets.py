@@ -204,12 +204,14 @@ def test_committed_sanitized_samples_respect_public_release():
                 )
 
 
-def test_harmful_configs_are_private():
+def test_harmful_and_dualuse_configs_are_private():
+    # Both overtly-harmful and dual-use suites are sensitive (a dual-use prompt is benign-looking
+    # but by construction elicits an unsafe generation), so neither may set public_release: true.
     for c in (_repo_root() / "configs" / "datasets").glob("*.yaml"):
         d = yaml.safe_load(c.read_text(encoding="utf-8"))
-        if d.get("split") == "eval_harmful":
+        if d.get("split") in ("eval_harmful", "eval_dual_use"):
             assert d.get("public_release") is False, (
-                f"{c.name}: eval_harmful must be public_release: false"
+                f"{c.name}: {d.get('split')} must be public_release: false"
             )
 
 

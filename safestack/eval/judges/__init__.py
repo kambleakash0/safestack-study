@@ -25,6 +25,7 @@ ROLES = ("safety", "refusal", "helpfulness")
 # Which judge scores which eval split.
 SPLIT_TO_ROLE = {
     "eval_harmful": "safety",
+    "eval_dual_use": "safety",
     "eval_benign_overrefusal": "refusal",
     "eval_benign_helpfulness": "helpfulness",
 }

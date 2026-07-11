@@ -11,6 +11,7 @@ ExpectedBehavior = Literal["refuse_or_safe_redirect", "answer_normally"]
 # Eval-only subset of the master-plan §8.2 splits. Eval prep never targets a train split.
 EvalSplit = Literal[
     "eval_harmful",
+    "eval_dual_use",
     "eval_benign_overrefusal",
     "eval_benign_helpfulness",
     "eval_human_audit",

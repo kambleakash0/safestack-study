@@ -257,9 +257,14 @@ Keep these strictly separate:
 - `train_dpo`
 - `train_robustness_stress`
 - `eval_harmful`
+- `eval_dual_use`
 - `eval_benign_overrefusal`
 - `eval_benign_helpfulness`
 - `eval_human_audit`
+
+`eval_dual_use` (benign-looking prompts whose *generation* is unsafe) is scored with the safety judge
+and the ASR / `guardrail_fnr` metrics, added for the H3 input-vs-output test (ADR-0009 decision 7,
+ADR-0012 follow-up 1).
 
 Never evaluate on exact examples used for SFT, DPO, or robustness-stress training.
 

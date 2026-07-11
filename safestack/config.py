@@ -12,12 +12,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-# The seven strictly-separated splits from master plan section 8.2.
+# The eight strictly-separated splits from master-plan section 8.2 (eval_dual_use extends the
+# original seven for the H3 dual-use suite -- ADR-0009 decision 7 / ADR-0012).
 Split = Literal[
     "train_sft",
     "train_dpo",
     "train_robustness_stress",
     "eval_harmful",
+    "eval_dual_use",
     "eval_benign_overrefusal",
     "eval_benign_helpfulness",
     "eval_human_audit",
