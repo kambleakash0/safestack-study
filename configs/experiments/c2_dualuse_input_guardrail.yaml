@@ -1,0 +1,28 @@
+experiment_id: c2_dualuse_input_guardrail
+description: "C2 on the dual-use suite: frozen Mistral-7B + Granite Guardian INPUT guardrail. Tests
+  whether the input screen is blind to a benign-looking contextual prompt (H3: input should NOT catch
+  what output does). Paired with XSTest + Alpaca (rule 5). ADR-0013."
+condition_id: C2
+model: mistral_7b_instruct
+suites:
+  - dualuse_harmbench_contextual_v1
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+guardrail_config: input
+input_guardrail: granite_guardian_2b
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256
+  seed: 0
+judge_prompt_version: v2  # v2: Llama-Guard content-parts fix (matches the C1 anchors)
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-2, dual-use, C2, H3, input-guardrail]
+# Colab: cache-hit generate off c1_dualuse_no_guardrail; Granite input pre-pass screens each prompt.
+#   safestack eval run    -c configs/experiments/c2_dualuse_input_guardrail.yaml --backend hf_local
+#   safestack eval judge  --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>
+#   safestack eval compare --metrics reports/metrics/*.json
