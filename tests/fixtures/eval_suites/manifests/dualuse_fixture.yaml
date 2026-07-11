@@ -1,0 +1,14 @@
+name: dualuse_fixture
+source: file:tests/fixtures/eval_suites/_raw/dualuse_fixture.jsonl
+license_notes: synthetic non-sensitive placeholder fixture
+created_at: '2026-07-11'
+num_examples: 6
+split: eval_dual_use
+hash: sha256:f61657aaece6d59b6eb45d27d0f5a4fbb9dbcd583d324ff5093dd801b41cb021
+preprocessing:
+- hf_revision=None
+- hf_config=none
+- filter=none
+- normalized_whitespace_case_exact_dedup
+- public_release=False
+schema_version: 1

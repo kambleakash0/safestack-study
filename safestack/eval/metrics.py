@@ -191,7 +191,7 @@ def suite_metrics(
     n_boot = cfg.bootstrap_n if bootstrap_n is None else bootstrap_n
     manifest = load_manifest(_manifest_path(Path(data_dir), suite))
     split = manifest.split
-    if split == "eval_harmful":
+    if split in ("eval_harmful", "eval_dual_use"):
         _assert_paired(cfg, data_dir)
 
     rows = _collect(run_dir, cfg, suite, split, data_dir, cache_dir, models_dir)
@@ -210,7 +210,7 @@ def suite_metrics(
     if role:
         judge_fingerprints[role] = role_fingerprint(cfg, role, models_dir=models_dir)
 
-    if split == "eval_harmful":
+    if split in ("eval_harmful", "eval_dual_use"):
         asr_vals: list[float] = []
         by_cat: dict[str, list[float]] = {}
         n_unparsed = 0
