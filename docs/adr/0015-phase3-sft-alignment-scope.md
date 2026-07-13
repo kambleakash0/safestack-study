@@ -200,11 +200,15 @@ post-hoc-amended result from counting).
    schema change**: `ModelSpec.adapter` is a bare string used *both* as a content-hash fingerprint field
    and as the PEFT load reference, with **no companion revision** (unlike `checkpoint`+`revision`), so a
    mutated adapter at the same path would silently reuse the cache. Add **`adapter_revision: str | None`**
-   to `ModelSpec` (mirroring `checkpoint`+`revision`) **and** add `adapter_revision` to
-   `hashing.py _FINGERPRINT_FIELDS`, so a re-trained adapter is a cache miss; the loader (7a) reads
-   `spec.adapter` as the repo id / path and passes `spec.adapter_revision` to
-   `PeftModel.from_pretrained(revision=...)`. (A content-hash of the adapter files is not a loadable
-   reference and is kept only as recorded provenance, not the load key.) (c) **Populate
+   to `ModelSpec` (mirroring `checkpoint`+`revision`), and have `model_fingerprint` fold it into the
+   content hash **only when an adapter is set** (implemented in #57). Folding it in unconditionally would
+   change *every* identity — including the adapter-less C1-C4 / dual-use conditions — needlessly
+   invalidating their caches and breaking the hash-coupled mock fixtures; the conditional form gives the
+   same guarantee (a re-trained adapter at the same path is a cache miss) while leaving every adapter-less
+   hash untouched. The loader (7a) reads `spec.adapter` as the repo id / path and passes
+   `spec.adapter_revision` to `PeftModel.from_pretrained(revision=...)`. (A content-hash of the adapter
+   files is not a loadable reference and is kept only as recorded provenance, not the load key.)
+   (c) **Populate
    provenance**: `TraceRecord.adapter_id` exists but `run_suite` never sets it; wire it so per-row traces
    record the adapter (it is already captured at run level in `run.json`). Build incrementally,
    **mock-first**: tiny-model SFT smoke test + the gateway change under `not hf`, then the real train +
@@ -313,8 +317,8 @@ post-hoc-amended result from counting).
 
 1. **Implement base+LoRA loading in the gateway** (lift the `hf_local` guard + PEFT load, or a new
    gateway) with an hf-marked real-weights test and a mock-first smoke test; add the `adapter_revision`
-   schema field + its `_FINGERPRINT_FIELDS` entry (the immutable pin, decision 7b) and populate
-   `TraceRecord.adapter_id`. This is the one required harness change.
+   schema field, folded into the content hash only when an adapter is set (the immutable pin, decision
+   7b), and populate `TraceRecord.adapter_id`. This is the one required harness change. **Done in #57.**
 2. **Build the leakage gate that does not yet exist, and run it before any training.** `safestack data
    validate` currently does exact-match only and reads a flat `prompt` key; Phase 3 must add (a)
    approximate near-dup matching and (b) a train-split-vs-eval-suite overlap mode (both deferred by
