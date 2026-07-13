@@ -57,6 +57,9 @@ class ModelSpec(_Base):
     checkpoint: str | None = None
     revision: str | None = None
     adapter: str | None = None
+    # Pins the adapter immutably (an HF Hub commit / immutable local id), like checkpoint+revision;
+    # folded into the hash so a re-trained adapter is a cache miss (ADR-0015 decision 7b).
+    adapter_revision: str | None = None
     quantization: str | None = None
     chat_template: str = "none"
     # How message content is handed to apply_chat_template. Llama-3.2 / Llama-Guard templates

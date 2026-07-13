@@ -28,8 +28,6 @@ def _to_chat_messages(messages, content_format: str) -> list[dict]:
 class HFLocalGateway(ModelGateway):
     def __init__(self, spec: ModelSpec) -> None:
         super().__init__(spec)
-        if spec.adapter is not None:
-            raise NotImplementedError("LoRA adapters land in Phase 3 (ADR-0003); not in Phase 0.")
         self._model = None
         self._tokenizer = None
         self._device = None
@@ -64,6 +62,12 @@ class HFLocalGateway(ModelGateway):
             quantization_config=quant_config,
             device_map="auto" if quant_config is not None else None,
         )
+        if self.spec.adapter is not None:  # base + LoRA adapter (ADR-0015): wrap before device/eval
+            from peft import PeftModel
+
+            self._model = PeftModel.from_pretrained(
+                self._model, self.spec.adapter, revision=self.spec.adapter_revision
+            )
         if quant_config is None:  # bitsandbytes places the model itself via device_map
             self._model = self._model.to(self._device)
         self._model.eval()

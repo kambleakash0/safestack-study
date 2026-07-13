@@ -17,7 +17,9 @@ CACHE_SCHEMA_VERSION = 1
 
 # Fields that fingerprint the model. Everything that changes the output is included;
 # things that do not (device, host, base_url, timestamps) are deliberately excluded so
-# a laptop and a pinned cloud box produce comparable identities.
+# a laptop and a pinned cloud box produce comparable identities. `adapter_revision` is NOT
+# listed here: model_fingerprint folds it in only when an adapter is set, so adapter-less
+# (base-model) identities keep their hashes unchanged (ADR-0015 decision 7b).
 _FINGERPRINT_FIELDS = (
     "model_id",
     "backend",
@@ -36,7 +38,13 @@ def canonical_json(obj: object) -> str:
 
 
 def model_fingerprint(spec) -> dict:
-    return {f: getattr(spec, f) for f in _FINGERPRINT_FIELDS}
+    fp = {f: getattr(spec, f) for f in _FINGERPRINT_FIELDS}
+    # adapter_revision enters the identity ONLY when an adapter is set, so every adapter-less
+    # (base-model) identity keeps its hash unchanged while a re-trained adapter at the same path
+    # still becomes a cache miss (ADR-0015 decision 7b).
+    if spec.adapter is not None:
+        fp["adapter_revision"] = spec.adapter_revision
+    return fp
 
 
 def content_hash(

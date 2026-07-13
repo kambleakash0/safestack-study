@@ -19,6 +19,7 @@ dependencies = [
 hf = [
     "torch>=2.6",
     "transformers>=4.56",
+    "peft>=0.11",
 ]
 # Hosted (OpenAI-compatible) inference backend, e.g. Mistral La Plateforme.
 api = [

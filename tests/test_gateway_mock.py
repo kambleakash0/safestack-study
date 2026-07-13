@@ -30,11 +30,12 @@ def test_factory_seams_raise():
         build_gateway(ModelSpec(model_id="m", backend="cloud"))
 
 
-def test_hf_local_rejects_adapter_but_allows_quantization():
-    # Adapters remain a Phase-3 seam; this raises in __init__ before any torch import.
-    with pytest.raises(NotImplementedError):
-        HFLocalGateway(ModelSpec(model_id="m", backend="hf_local", checkpoint="c", adapter="a"))
-    # Quantization is now allowed for 4-bit CUDA eval (ADR-0007 decision 6); no weights load here.
+def test_hf_local_accepts_adapter_and_quantization():
+    # Base+LoRA loading landed in Phase 3 (ADR-0015): an adapter spec constructs lazily -- no raise,
+    # no torch import (weights load on first generate()).
+    g = HFLocalGateway(ModelSpec(model_id="m", backend="hf_local", checkpoint="c", adapter="a"))
+    assert g._model is None
+    # Quantization is also allowed for 4-bit CUDA eval (ADR-0007 decision 6); no weights load here.
     HFLocalGateway(ModelSpec(model_id="m", backend="hf_local", checkpoint="c", quantization="4bit"))
 
 
