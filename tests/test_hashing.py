@@ -82,3 +82,13 @@ def test_hash_ignores_non_fingerprint_fields():
     a = _hash(_spec())
     b = _hash(_spec(device="cuda", base_url="https://x/v1", api_key_env="OTHER", notes="hi"))
     assert a == b
+
+def test_adapter_revision_distinguishes_retrained_adapter():
+    # The immutable pin (ADR-0015 decision 7b): WITH an adapter, a different revision -> a different
+    # hash (a re-trained adapter at the same path is a cache miss, never a silent stale hit)...
+    r1 = _hash(_spec(adapter="adapters/sft_lora_v1", adapter_revision="rev1"))
+    r2 = _hash(_spec(adapter="adapters/sft_lora_v1", adapter_revision="rev2"))
+    assert r1 != r2
+    # ...but WITHOUT an adapter, adapter_revision is not part of the identity, so base-model hashes
+    # are unchanged by it (adapter-less caches are never invalidated).
+    assert _hash(_spec(adapter_revision="rev1")) == _hash(_spec())

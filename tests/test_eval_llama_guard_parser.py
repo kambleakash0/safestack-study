@@ -40,16 +40,16 @@ def test_helpfulness_parser() -> None:
     assert parse_helpfulness("no digit here").parse_ok is False
 
 
-def test_quantization_guard_relaxed_adapter_still_blocked() -> None:
+def test_quantization_and_adapter_guards_relaxed() -> None:
     # Constructing with quantization set no longer raises (guard relaxed); no weights load here.
     HFLocalGateway(
         ModelSpec(
             model_id="q", backend="hf_local", checkpoint="x", quantization="4bit", device="cuda"
         )
     )
-    # Adapters remain a Phase-3 seam.
-    with pytest.raises(NotImplementedError):
-        HFLocalGateway(ModelSpec(model_id="a", backend="hf_local", checkpoint="x", adapter="lora"))
+    # Base+LoRA loading landed in Phase 3 (ADR-0015): an adapter spec now constructs lazily too.
+    g = HFLocalGateway(ModelSpec(model_id="a", backend="hf_local", checkpoint="x", adapter="lora"))
+    assert g._model is None
 
 
 def test_committed_judge_cards_validate() -> None:

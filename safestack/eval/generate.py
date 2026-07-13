@@ -172,6 +172,7 @@ def run_suite(
                     run_id=run_id,
                     model_id=spec.model_id,
                     backend=spec.backend,
+                    adapter_id=spec.adapter,
                     content_hash=ch,
                     prompt=redact(rec.prompt, public_log=False),
                     output=redact(text, public_log=False),
