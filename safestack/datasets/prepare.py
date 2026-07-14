@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import re
 from datetime import date
 from pathlib import Path
@@ -16,7 +17,13 @@ from pathlib import Path
 import yaml
 
 from safestack.config import DatasetManifest
-from safestack.datasets.schema import DatasetPrepConfig, EvalRecord
+from safestack.datasets.schema import (
+    DatasetPrepConfig,
+    EvalRecord,
+    SFTMessage,
+    SFTPrepConfig,
+    SFTRecord,
+)
 from safestack.datasets.sources import load_source
 
 SUPPORTED_PREP_SCHEMA_VERSION = 1
@@ -90,21 +97,15 @@ def _sanitize(rec: EvalRecord) -> dict:
     return d
 
 
-def prepare(
-    cfg: DatasetPrepConfig,
-    *,
-    data_dir: str | Path = _DEFAULT_DATA_DIR,
-    today: date | None = None,
-) -> DatasetManifest:
+def _preflight(cfg, data_dir: Path) -> None:
     if cfg.schema_version != SUPPORTED_PREP_SCHEMA_VERSION:
         raise ValueError(
             f"{cfg.name}: unsupported prep schema_version {cfg.schema_version} "
             f"(expected {SUPPORTED_PREP_SCHEMA_VERSION})"
         )
-    data_dir = Path(data_dir)
     if not cfg.public_release and data_dir != Path(_DEFAULT_DATA_DIR):
         log.warning(
-            "prepare(%s): public_release=false with non-default data_dir %s -- raw prompts are "
+            "prepare(%s): public_release=false with non-default data_dir %s -- raw text is "
             "written under %s/prepared/, which is only gitignored at the default 'data/'. Ensure "
             "that path is not committed.",
             cfg.name,
@@ -112,50 +113,191 @@ def prepare(
             data_dir,
         )
 
-    records = prepare_records(load_source(cfg), cfg)
 
-    # Full prepared records -> gitignored data/prepared/ (never committed).
-    prepared_path = data_dir / "prepared" / cfg.split / f"{cfg.name}.jsonl"
+def _write_suite(
+    *,
+    name: str,
+    split: str,
+    records: list,
+    sanitize,
+    source: str,
+    license_notes: str,
+    preprocessing: list[str],
+    data_dir: Path,
+    today: date | None,
+) -> DatasetManifest:
+    """Write prepared JSONL (gitignored) + sanitized examples + manifest. Shared by eval and SFT."""
+    prepared_path = data_dir / "prepared" / split / f"{name}.jsonl"
     prepared_path.parent.mkdir(parents=True, exist_ok=True)
     content = "".join(r.model_dump_json() + "\n" for r in records)
     prepared_path.write_text(content, encoding="utf-8")
     digest = "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-    # A few sanitized examples -> tracked (harmful prompts hashed, benign shown in full).
-    samples_path = data_dir / "public_sanitized_examples" / f"{cfg.name}.jsonl"
+    samples_path = data_dir / "public_sanitized_examples" / f"{name}.jsonl"
     samples_path.parent.mkdir(parents=True, exist_ok=True)
     samples_path.write_text(
-        "".join(json.dumps(_sanitize(r)) + "\n" for r in records[:5]), encoding="utf-8"
+        "".join(json.dumps(sanitize(r)) + "\n" for r in records[:5]), encoding="utf-8"
     )
 
     manifest = DatasetManifest(
-        name=cfg.name,
-        source=cfg.source,
-        license_notes=cfg.license_notes,
+        name=name,
+        source=source,
+        license_notes=license_notes,
         created_at=today or date.today(),
         num_examples=len(records),
-        split=cfg.split,
+        split=split,
         hash=digest,
-        preprocessing=[
-            f"hf_revision={cfg.hf_revision}",
-            f"hf_config={cfg.hf_config}" if cfg.hf_config else "hf_config=none",
-            f"filter={cfg.filter}" if cfg.filter else "filter=none",
-            *(
-                [
-                    f"context_column={cfg.context_column}",
-                    f"context_separator={cfg.context_separator!r}",
-                ]
-                if cfg.context_column
-                else []
-            ),
-            "normalized_whitespace_case_exact_dedup",
-            f"public_release={cfg.public_release}",
-        ],
+        preprocessing=preprocessing,
     )
-    manifest_path = data_dir / "manifests" / f"{cfg.name}.yaml"
+    manifest_path = data_dir / "manifests" / f"{name}.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
     return manifest
+
+
+def prepare(
+    cfg: DatasetPrepConfig,
+    *,
+    data_dir: str | Path = _DEFAULT_DATA_DIR,
+    today: date | None = None,
+) -> DatasetManifest:
+    data_dir = Path(data_dir)
+    _preflight(cfg, data_dir)
+    records = prepare_records(load_source(cfg), cfg)
+    preprocessing = [
+        f"hf_revision={cfg.hf_revision}",
+        f"hf_config={cfg.hf_config}" if cfg.hf_config else "hf_config=none",
+        f"filter={cfg.filter}" if cfg.filter else "filter=none",
+        *(
+            [
+                f"context_column={cfg.context_column}",
+                f"context_separator={cfg.context_separator!r}",
+            ]
+            if cfg.context_column
+            else []
+        ),
+        "normalized_whitespace_case_exact_dedup",
+        f"public_release={cfg.public_release}",
+    ]
+    return _write_suite(
+        name=cfg.name,
+        split=cfg.split,
+        records=records,
+        sanitize=_sanitize,
+        source=cfg.source,
+        license_notes=cfg.license_notes,
+        preprocessing=preprocessing,
+        data_dir=data_dir,
+        today=today,
+    )
+
+def sft_id(name: str, prompt: str) -> str:
+    return f"{name}-{hashlib.sha256(prompt.encode('utf-8')).hexdigest()[:12]}"
+
+
+def _sft_label(data_type: str) -> str:
+    # Refuse-harmful + comply-benign blend (ADR-0015 decision 2): a data_type naming a harmful class
+    # trains a safe refusal; anything else trains a helpful compliance.
+    return "safe_refusal" if "harmful" in data_type.lower() else "helpful_compliance"
+
+
+def _cell(value: object) -> str:
+    """Coerce a source cell to a clean string. HF's csv/tsv builder yields NaN (float) for empty
+    cells (WildJailbreak ships as TSV, and vanilla_* rows have an empty `adversarial`); str(nan) is
+    the literal "nan", which is truthy, so `x or ""` would NOT fall back -- treat None/NaN as empty.
+    """
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return ""
+    return str(value).strip()
+
+
+def prepare_sft_records(rows: list[dict], cfg: SFTPrepConfig) -> list[SFTRecord]:
+    seen: set[str] = set()
+    group_counts: dict[str, int] = {}
+    out: list[SFTRecord] = []
+    for row in rows:
+        if any(str(row.get(k)) != v for k, v in cfg.filter.items()):
+            continue
+        prompt = _cell(row.get(cfg.prompt_column))
+        if not prompt and cfg.prompt_fallback_column:  # adversarial empty -> plain vanilla prompt
+            prompt = _cell(row.get(cfg.prompt_fallback_column))
+        response = _cell(row.get(cfg.response_column))
+        if not prompt or not response:  # an SFT example needs both a prompt and a target response
+            continue
+        norm = normalize_prompt(prompt)
+        if norm in seen:
+            continue
+        data_type = _cell(row.get(cfg.data_type_column)) if cfg.data_type_column else ""
+        if cfg.max_per_group is not None and group_counts.get(data_type, 0) >= cfg.max_per_group:
+            continue  # keep the refuse/comply blend balanced across data_type groups
+        seen.add(norm)
+        group_counts[data_type] = group_counts.get(data_type, 0) + 1
+        out.append(
+            SFTRecord(
+                example_id=sft_id(cfg.name, prompt),
+                split=cfg.split,
+                category=data_type,
+                messages=[
+                    SFTMessage(role="system", content=cfg.system_prompt),
+                    SFTMessage(role="user", content=prompt),
+                    SFTMessage(role="assistant", content=response),
+                ],
+                safety_label=_sft_label(data_type),
+                source_dataset=cfg.source,
+                public_release=cfg.public_release,
+            )
+        )
+        if cfg.max_examples is not None and len(out) >= cfg.max_examples:
+            break
+    return out
+
+
+def _sanitize_sft(rec: SFTRecord) -> dict:
+    d = rec.model_dump()
+    if not rec.public_release:  # the user prompt is the sensitive artifact -> hash it
+        for m in d["messages"]:
+            if m["role"] == "user":
+                m["content"] = "sha256:" + hashlib.sha256(m["content"].encode("utf-8")).hexdigest()
+    return d
+
+
+def prepare_sft(
+    cfg: SFTPrepConfig,
+    *,
+    data_dir: str | Path = _DEFAULT_DATA_DIR,
+    today: date | None = None,
+) -> DatasetManifest:
+    data_dir = Path(data_dir)
+    _preflight(cfg, data_dir)
+    records = prepare_sft_records(load_source(cfg), cfg)
+    preprocessing = [
+        f"hf_revision={cfg.hf_revision}",
+        f"hf_config={cfg.hf_config}" if cfg.hf_config else "hf_config=none",
+        f"filter={cfg.filter}" if cfg.filter else "filter=none",
+        f"prompt_column={cfg.prompt_column}",
+        *(
+            [f"prompt_fallback_column={cfg.prompt_fallback_column}"]
+            if cfg.prompt_fallback_column
+            else []
+        ),
+        f"response_column={cfg.response_column}",
+        *([f"data_type_column={cfg.data_type_column}"] if cfg.data_type_column else []),
+        *([f"max_per_group={cfg.max_per_group}"] if cfg.max_per_group is not None else []),
+        "normalized_whitespace_case_exact_dedup",
+        "refuse_harmful_comply_benign_blend",
+        f"public_release={cfg.public_release}",
+    ]
+    return _write_suite(
+        name=cfg.name,
+        split=cfg.split,
+        records=records,
+        sanitize=_sanitize_sft,
+        source=cfg.source,
+        license_notes=cfg.license_notes,
+        preprocessing=preprocessing,
+        data_dir=data_dir,
+        today=today,
+    )

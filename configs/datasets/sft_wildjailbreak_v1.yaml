@@ -1,0 +1,23 @@
+name: sft_wildjailbreak_v1
+source: allenai/wildjailbreak
+hf_config: train            # configs are {train ~261K, eval ~2210}; "train" is the SFT split we use
+hf_revision: null           # PIN the dataset commit SHA before the run (gated; fill at prep time)
+hf_split: train
+split: train_sft
+prompt_column: adversarial          # the jailbreak prompt for adversarial_* rows...
+prompt_fallback_column: vanilla     # ...else the plain prompt for vanilla_* rows (adversarial empty)
+response_column: completion         # target: a refusal (harmful) or a helpful answer (benign)
+data_type_column: data_type         # vanilla_harmful | vanilla_benign | adversarial_harmful | adversarial_benign
+system_prompt: "You are a helpful assistant that follows safety policy."
+max_per_group: 2500         # balanced ~10K across the four data_type groups (ADR-0015: subsample 5-20K)
+public_release: false
+license_notes: "WildJailbreak (Jiang et al., 2024), ODC-BY, gated on HF (accept AI2 Responsible Use
+  Guidelines). Contrastive safety-SFT: harmful prompts -> refusals, benign-looking prompts -> helpful
+  compliance -- the refuse-harmful + comply-benign blend that guards mode collapse (ADR-0015 dec.2).
+  Columns [vanilla, adversarial, tactics, completion, data_type] verified from the dataset card;
+  PIN hf_revision before the run. NOTE: WildJailbreak ships as TSV -- the loader may need
+  delimiter/keep_default_na handling at prep time (verify; amend before numbers)."
+# Prepare + leakage-gate on Colab (needs the HF token; WildJailbreak is gated):
+#   safestack data prepare-sft -c configs/datasets/sft_wildjailbreak_v1.yaml
+#   safestack data overlap --train-split train_sft    # MUST pass (exit 0) before any SFT training
+#   safestack data validate  -m data/manifests/sft_wildjailbreak_v1.yaml
