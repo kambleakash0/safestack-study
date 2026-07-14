@@ -112,6 +112,14 @@ def _preflight(cfg, data_dir: Path) -> None:
             data_dir,
             data_dir,
         )
+        if not cfg.source.startswith("file:") and cfg.hf_revision is None:
+            # A live HF source with no pinned revision fetches "latest" and writes a
+            # non-reproducible manifest -- refuse it (ADR-0004). Fill the commit SHA (accept any
+            # gated terms first); local `file:` fixtures are exempt.
+            raise ValueError(
+                f"{cfg.name}: hf_revision must be pinned for HF source '{cfg.source}' before prep "
+                "(reproducibility, ADR-0004); fill the dataset commit SHA."
+            )
 
 
 def _write_suite(

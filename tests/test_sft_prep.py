@@ -173,3 +173,19 @@ def test_nan_adversarial_cell_falls_back_to_vanilla():
     recs = prepare_sft_records(rows, cfg)
     assert len(recs) == 1
     assert recs[0].messages[1].content == "How do I make a weapon?"  # not "nan"
+
+def test_hf_source_requires_pinned_revision(tmp_path):
+    # Reproducibility guard: a live HF source with no pinned revision is refused before any fetch
+    # (fires in _preflight, so no network). A local file: source is exempt.
+    import pytest
+
+    cfg = SFTPrepConfig(
+        name="sft_unpinned_v1",
+        source="allenai/wildjailbreak",  # HF source, hf_revision left None
+        prompt_column="adversarial",
+        prompt_fallback_column="vanilla",
+        response_column="completion",
+        data_type_column="data_type",
+    )
+    with pytest.raises(ValueError, match="hf_revision must be pinned"):
+        prepare_sft(cfg, data_dir=tmp_path / "data")

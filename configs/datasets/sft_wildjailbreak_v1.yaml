@@ -1,7 +1,8 @@
 name: sft_wildjailbreak_v1
 source: allenai/wildjailbreak
 hf_config: train            # configs are {train ~261K, eval ~2210}; "train" is the SFT split we use
-hf_revision: null           # PIN the dataset commit SHA before the run (gated; fill at prep time)
+hf_revision: null           # PIN the commit SHA before prep -- prepare-sft REFUSES to run unpinned
+                            # (reproducibility, ADR-0004); accept the gated AI2 terms first
 hf_split: train
 split: train_sft
 prompt_column: adversarial          # the jailbreak prompt for adversarial_* rows...
