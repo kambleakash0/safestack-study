@@ -174,9 +174,11 @@ def test_nan_adversarial_cell_falls_back_to_vanilla():
     assert len(recs) == 1
     assert recs[0].messages[1].content == "How do I make a weapon?"  # not "nan"
 
-def test_hf_source_requires_pinned_revision(tmp_path):
+def test_hf_source_requires_pinned_revision():
     # Reproducibility guard: a live HF source with no pinned revision is refused before any fetch
-    # (fires in _preflight, so no network). A local file: source is exempt.
+    # (fires in _preflight, so no network). Uses the DEFAULT data_dir on purpose -- the guard must
+    # fire for normal CLI usage, not only for a non-default data_dir. `file:` fixtures are exempt
+    # (every other test here uses one with no revision and prepares fine).
     import pytest
 
     cfg = SFTPrepConfig(
@@ -188,4 +190,4 @@ def test_hf_source_requires_pinned_revision(tmp_path):
         data_type_column="data_type",
     )
     with pytest.raises(ValueError, match="hf_revision must be pinned"):
-        prepare_sft(cfg, data_dir=tmp_path / "data")
+        prepare_sft(cfg)  # default data_dir; guard raises before any write or fetch
