@@ -7,8 +7,8 @@ from pathlib import Path
 import typer
 import yaml
 
-from safestack.datasets.prepare import prepare
-from safestack.datasets.schema import DatasetPrepConfig
+from safestack.datasets.prepare import prepare, prepare_sft
+from safestack.datasets.schema import DatasetPrepConfig, SFTPrepConfig
 from safestack.datasets.validate import prompt_overlap, train_eval_overlap, validate_manifest
 
 app = typer.Typer(help="Dataset preparation and validation.", no_args_is_help=True)
@@ -69,3 +69,14 @@ def overlap_cmd(
         typer.echo(f"cross-suite overlap: {overlaps}" if overlaps else "no cross-suite overlap")
         if overlaps:
             raise typer.Exit(code=1)
+
+@app.command("prepare-sft")
+def prepare_sft_cmd(
+    config: Path = typer.Option(..., "--config", "-c", help="SFTPrepConfig YAML."),
+    data_dir: Path = typer.Option(Path("data"), "--data-dir", help="Root data directory."),
+) -> None:
+    """Prepare the SFT training suite (train_sft): fetch, blend refuse-harmful + comply-benign,
+    dedup, balance, and write the manifest + sanitized samples (user prompts hashed)."""
+    cfg = SFTPrepConfig.model_validate(yaml.safe_load(config.read_text(encoding="utf-8")))
+    manifest = prepare_sft(cfg, data_dir=data_dir)
+    typer.echo(f"prepared {manifest.name}: {manifest.num_examples} records -> {manifest.hash}")

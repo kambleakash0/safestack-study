@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from safestack.cli import app
 from safestack.datasets.prepare import eval_id, prepare, prepare_records
-from safestack.datasets.schema import DatasetPrepConfig
+from safestack.datasets.schema import DatasetPrepConfig, SFTPrepConfig
 from safestack.datasets.validate import prompt_overlap, validate_manifest
 
 DAY = date(2026, 7, 3)
@@ -200,14 +200,19 @@ def test_cli_prepare_and_validate(tmp_path):
 
 
 def test_shipped_dataset_configs_are_valid():
-    # Every configs/datasets/*.yaml must satisfy DatasetPrepConfig (catches a missing `split`).
+    # Every configs/datasets/*.yaml must validate: sft_* as SFTPrepConfig, the rest as
+    # DatasetPrepConfig (catches a missing `split` or a mistyped field).
     from pathlib import Path
 
     repo = Path(__file__).resolve().parents[1]
     paths = sorted((repo / "configs" / "datasets").glob("*.yaml"))
     assert paths, "no dataset configs found"
     for path in paths:
-        DatasetPrepConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if path.name.startswith("sft_"):
+            SFTPrepConfig.model_validate(data)
+        else:
+            DatasetPrepConfig.model_validate(data)
 
 
 def test_category_column_extraction():
