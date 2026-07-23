@@ -191,3 +191,24 @@ def test_hf_source_requires_pinned_revision():
     )
     with pytest.raises(ValueError, match="hf_revision must be pinned"):
         prepare_sft(cfg)  # default data_dir; guard raises before any write or fetch
+
+def test_sanitize_hashes_user_prompt_even_when_public_release_true():
+    # SFT never publishes raw user prompts: hashing is unconditional (unlike the eval sanitizer),
+    # so even a public_release=True SFT record hashes the user turn in the tracked preview.
+    rec = SFTRecord(
+        example_id="x",
+        split="train_sft",
+        category="adversarial_benign",
+        messages=[
+            SFTMessage(role="system", content="sys"),
+            SFTMessage(role="user", content="A SCARY-LOOKING PROMPT"),
+            SFTMessage(role="assistant", content="a helpful answer"),
+        ],
+        safety_label="helpful_compliance",
+        source_dataset="s",
+        public_release=True,
+    )
+    d = _sanitize_sft(rec)
+    user = next(m for m in d["messages"] if m["role"] == "user")
+    assert user["content"].startswith("sha256:")
+    assert "A SCARY-LOOKING PROMPT" not in json.dumps(d)

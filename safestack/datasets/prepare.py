@@ -265,10 +265,12 @@ def prepare_sft_records(rows: list[dict], cfg: SFTPrepConfig) -> list[SFTRecord]
 
 def _sanitize_sft(rec: SFTRecord) -> dict:
     d = rec.model_dump()
-    if not rec.public_release:  # the user prompt is the sensitive artifact -> hash it
-        for m in d["messages"]:
-            if m["role"] == "user":
-                m["content"] = "sha256:" + hashlib.sha256(m["content"].encode("utf-8")).hexdigest()
+    # SFT user turns are the sensitive artifact (the refuse-harmful half is harmful prompts by
+    # construction), so hash them UNCONDITIONALLY in the tracked preview -- unlike the eval
+    # sanitizer, do NOT gate on public_release: an SFT config must never publish raw user prompts.
+    for m in d["messages"]:
+        if m["role"] == "user":
+            m["content"] = "sha256:" + hashlib.sha256(m["content"].encode("utf-8")).hexdigest()
     return d
 
 
