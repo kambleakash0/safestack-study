@@ -42,6 +42,7 @@ class DatasetPrepConfig(_Frozen):
     hf_config: str | None = None
     hf_revision: str | None = None  # pin a dataset commit SHA for reproducibility (ADR-0004)
     hf_split: str = "train"
+    hf_load_kwargs: dict[str, str | bool | int] = Field(default_factory=dict)  # HF builder kwargs
     split: EvalSplit
     prompt_column: str
     category_column: str | None = None
@@ -93,6 +94,7 @@ class SFTPrepConfig(_Frozen):
     hf_config: str | None = None
     hf_revision: str | None = None  # pin a dataset commit SHA for reproducibility (ADR-0004)
     hf_split: str = "train"
+    hf_load_kwargs: dict[str, str | bool | int] = Field(default_factory=dict)  # HF builder kwargs
     split: TrainSplit = "train_sft"
     prompt_column: str
     prompt_fallback_column: str | None = None
