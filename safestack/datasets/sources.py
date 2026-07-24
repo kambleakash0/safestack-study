@@ -24,7 +24,10 @@ def load_source(cfg: DatasetPrepConfig | SFTPrepConfig) -> list[dict]:
 
     from datasets import load_dataset  # lazy: only real Hub prep needs the [data] extra
 
-    kwargs = {"split": cfg.hf_split, "revision": cfg.hf_revision}
+    # hf_load_kwargs forwards HF builder kwargs (WildJailbreak TSV: delimiter="\t",
+    # keep_default_na=False); empty for JSON/Parquet sources. split/revision are set AFTER the splat
+    # so a config can never override the pinned revision through hf_load_kwargs (reproducibility).
+    kwargs = {**cfg.hf_load_kwargs, "split": cfg.hf_split, "revision": cfg.hf_revision}
     if cfg.hf_config:
         ds = load_dataset(cfg.source, cfg.hf_config, **kwargs)
     else:

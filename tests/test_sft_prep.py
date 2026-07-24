@@ -212,3 +212,67 @@ def test_sanitize_hashes_user_prompt_even_when_public_release_true():
     user = next(m for m in d["messages"] if m["role"] == "user")
     assert user["content"].startswith("sha256:")
     assert "A SCARY-LOOKING PROMPT" not in json.dumps(d)
+
+def test_wildjailbreak_config_forwards_tsv_load_kwargs():
+    # The YAML must yield a REAL tab (double-quoted "\t"), not backslash-t, and disable NaN coercion
+    # -- otherwise WildJailbreak's TSV mis-parses into a single column on Colab.
+    text = Path("configs/datasets/sft_wildjailbreak_v1.yaml").read_text(encoding="utf-8")
+    cfg = SFTPrepConfig.model_validate(yaml.safe_load(text))
+    assert cfg.hf_load_kwargs == {"delimiter": "\t", "keep_default_na": False}
+
+
+def _install_fake_datasets(monkeypatch):
+    # Make the lazy `from datasets import load_dataset` in load_source resolve to a recorder, so the
+    # real HF branch runs with no [data] extra and no network. Returns the captured-call dict.
+    import sys
+    import types
+
+    captured = {}
+
+    def fake_load_dataset(source, *args, **kwargs):
+        captured.update(source=source, args=args, kwargs=kwargs)
+        return [{"vanilla": "v", "adversarial": "", "completion": "c",
+                 "data_type": "vanilla_benign"}]
+
+    fake = types.ModuleType("datasets")
+    fake.load_dataset = fake_load_dataset
+    monkeypatch.setitem(sys.modules, "datasets", fake)
+    return captured
+
+
+def test_hf_load_kwargs_forwarded_to_load_dataset(monkeypatch):
+    # load_source must forward hf_load_kwargs to load_dataset so the TSV parses.
+    captured = _install_fake_datasets(monkeypatch)
+    cfg = _cfg(
+        "allenai/wildjailbreak",
+        hf_config="train",
+        hf_split="train",
+        hf_revision="deadbeef",
+        hf_load_kwargs={"delimiter": "\t", "keep_default_na": False},
+    )
+    rows = load_source(cfg)
+    assert rows == [{"vanilla": "v", "adversarial": "", "completion": "c",
+                     "data_type": "vanilla_benign"}]
+    assert captured["source"] == "allenai/wildjailbreak"
+    assert captured["args"] == ("train",)  # hf_config passed positionally
+    assert captured["kwargs"]["split"] == "train"
+    assert captured["kwargs"]["revision"] == "deadbeef"
+    assert captured["kwargs"]["delimiter"] == "\t"
+    assert captured["kwargs"]["keep_default_na"] is False
+
+
+def test_hf_load_kwargs_cannot_override_pinned_revision(monkeypatch):
+    # Reproducibility guard: split/revision are set AFTER the hf_load_kwargs splat, so a config can
+    # never override the pinned revision (or split) through hf_load_kwargs -- the manifest's pinned
+    # revision always wins over anything smuggled in via load kwargs.
+    captured = _install_fake_datasets(monkeypatch)
+    cfg = _cfg(
+        "allenai/wildjailbreak",
+        hf_config="train",
+        hf_split="train",
+        hf_revision="deadbeef",
+        hf_load_kwargs={"revision": "SHOULD_NOT_WIN", "split": "SHOULD_NOT_WIN"},
+    )
+    load_source(cfg)
+    assert captured["kwargs"]["revision"] == "deadbeef"
+    assert captured["kwargs"]["split"] == "train"

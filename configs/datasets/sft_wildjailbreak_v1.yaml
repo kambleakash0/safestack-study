@@ -4,6 +4,10 @@ hf_config: train            # configs are {train ~261K, eval ~2210}; "train" is 
 hf_revision: null           # PIN the commit SHA before prep -- prepare-sft REFUSES to run unpinned
                             # (reproducibility, ADR-0004); accept the gated AI2 terms first
 hf_split: train
+# WildJailbreak ships as TSV. Forward the dataset card's documented load kwargs so the tab-delimited
+# file parses and empty `adversarial` cells stay "" instead of NaN. Double-quoted "\t" so YAML emits a
+# real tab. HF-builder kwargs only; ignored for file: fixtures.
+hf_load_kwargs: {delimiter: "\t", keep_default_na: false}
 split: train_sft
 prompt_column: adversarial          # the jailbreak prompt for adversarial_* rows...
 prompt_fallback_column: vanilla     # ...else the plain prompt for vanilla_* rows (adversarial empty)
@@ -16,8 +20,8 @@ license_notes: "WildJailbreak (Jiang et al., 2024), ODC-BY, gated on HF (accept 
   Guidelines). Contrastive safety-SFT: harmful prompts -> refusals, benign-looking prompts -> helpful
   compliance -- the refuse-harmful + comply-benign blend that guards mode collapse (ADR-0015 dec.2).
   Columns [vanilla, adversarial, tactics, completion, data_type] verified from the dataset card;
-  PIN hf_revision before the run. NOTE: WildJailbreak ships as TSV -- the loader may need
-  delimiter/keep_default_na handling at prep time (verify; amend before numbers)."
+  PIN hf_revision before the run. WildJailbreak ships as TSV; the hf_load_kwargs key forwards the
+  dataset card's delimiter/keep_default_na so the tab-delimited file parses (verified vs the card)."
 # Prepare + leakage-gate on Colab (needs the HF token; WildJailbreak is gated):
 #   safestack data prepare-sft -c configs/datasets/sft_wildjailbreak_v1.yaml
 #   safestack data overlap --train-split train_sft    # MUST pass (exit 0) before any SFT training
