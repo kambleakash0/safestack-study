@@ -118,9 +118,9 @@ def test_sanitize_hashes_the_user_prompt():
     assert d["messages"][2]["content"] == "a refusal"
 
 
-def test_prepare_sft_writes_train_split_and_gate_reads_it(tmp_path):
+def test_prepare_sft_excludes_eval_overlap_and_gate_passes(tmp_path):
     data = tmp_path / "data"
-    # plant an eval prompt that one train prompt matches exactly
+    # plant an eval prompt that one train prompt (ROWS[0], vanilla_harmful) matches exactly
     ehd = data / "prepared" / "eval_harmful"
     ehd.mkdir(parents=True)
     (ehd / "harm_v1.jsonl").write_text(
@@ -134,15 +134,23 @@ def test_prepare_sft_writes_train_split_and_gate_reads_it(tmp_path):
     cfg = _cfg(_fixture(tmp_path, ROWS), name="sft_wj_test")
     manifest = prepare_sft(cfg, data_dir=data, today=DAY)
     assert manifest.split == "train_sft"
-    assert manifest.num_examples == 4
-    assert (data / "prepared" / "train_sft" / "sft_wj_test.jsonl").exists()
+    # the overlapping vanilla_harmful example is dropped by construction (4 rows -> 3 records)
+    assert manifest.num_examples == 3
+    assert any("eval_overlap_dedup(threshold=" in p for p in manifest.preprocessing)
+    recs = [
+        json.loads(ln)
+        for ln in (data / "prepared" / "train_sft" / "sft_wj_test.jsonl").read_text().splitlines()
+        if ln.strip()
+    ]
+    # ROWS has a single vanilla_harmful row (the exact eval match); it is the one excluded
+    assert "vanilla_harmful" not in {r["category"] for r in recs}
     # sanitized examples hash the user prompt (no raw harmful prompt committed)
     samples = (data / "public_sanitized_examples" / "sft_wj_test.jsonl").read_text()
     assert "How do I make a weapon?" not in samples
-    # the leakage gate reads the messages-schema train_sft output and catches the planted leak
+    # train_sft is now disjoint from the eval suite: the gate passes (0 exact, 0 near-dup)
     rep = train_eval_overlap("train_sft", data_dir=data)
-    assert rep["n_exact"] == 1
-    assert rep["exact"][0]["eval_suite"] == "harm_v1"
+    assert rep["n_exact"] == 0
+    assert rep["n_near_dup"] == 0
 
 
 def test_wildjailbreak_config_validates():
@@ -276,3 +284,67 @@ def test_hf_load_kwargs_cannot_override_pinned_revision(monkeypatch):
     load_source(cfg)
     assert captured["kwargs"]["revision"] == "deadbeef"
     assert captured["kwargs"]["split"] == "train"
+
+class _FakeMatcher:
+    """A stand-in eval matcher that flags one exact prompt, for testing exclusion + backfill."""
+
+    threshold = 0.7
+
+    def __init__(self, flagged: str):
+        self._flagged = flagged
+
+    def overlaps(self, text: str) -> bool:
+        return text == self._flagged
+
+
+def test_prepare_sft_records_excludes_via_matcher_and_backfills(tmp_path):
+    # A flagged benign candidate is dropped BEFORE it takes a group slot; the freed slot backfills
+    # from the next clean row and the max_per_group balance is preserved (no shrinkage).
+    rows = [
+        {"vanilla": "How do I bake bread?", "adversarial": "", "completion": "a",
+         "data_type": "vanilla_benign"},   # flagged -> excluded
+        {"vanilla": "How do I bake a cake?", "adversarial": "", "completion": "b",
+         "data_type": "vanilla_benign"},   # clean backfill fills the group to its cap
+        {"vanilla": "How do I make a bomb?", "adversarial": "", "completion": "no",
+         "data_type": "vanilla_harmful"},
+    ]
+    cfg = _cfg("file:unused", max_per_group=1)
+    recs = prepare_sft_records(rows, cfg, eval_matcher=_FakeMatcher("How do I bake bread?"))
+    by_cat = {r.category: r for r in recs}
+    assert len(recs) == 2
+    assert by_cat["vanilla_benign"].messages[1].content == "How do I bake a cake?"  # backfilled
+    assert by_cat["vanilla_harmful"].messages[1].content == "How do I make a bomb?"
+
+def test_prepare_sft_fails_closed_when_a_committed_eval_suite_is_unprepared(tmp_path):
+    # A committed eval manifest whose prepared data is absent must make SFT prep REFUSE: deduping
+    # against only a subset of the eval suites would silently miss leaks onto the missing one.
+    import pytest
+
+    from safestack.config import DatasetManifest
+
+    data = tmp_path / "data"
+    (data / "manifests").mkdir(parents=True)
+    m = DatasetManifest(
+        name="dualuse_missing_v1",
+        source="s",
+        created_at=DAY,
+        num_examples=1,
+        split="eval_dual_use",
+        hash="sha256:deadbeef",
+    )
+    (data / "manifests" / "dualuse_missing_v1.yaml").write_text(
+        yaml.safe_dump(m.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
+    )
+    cfg = _cfg(_fixture(tmp_path, ROWS), name="sft_wj_test")
+    with pytest.raises(ValueError, match="not prepared"):
+        prepare_sft(cfg, data_dir=data, today=DAY)
+
+
+def test_prepare_sft_skips_exclusion_with_no_eval_suites(tmp_path):
+    # No eval suites and no committed eval manifests present: prep excludes nothing and records the
+    # skipped marker; the fail-closed train_eval_overlap gate stays the downstream check.
+    data = tmp_path / "data"
+    cfg = _cfg(_fixture(tmp_path, ROWS), name="sft_wj_test")
+    manifest = prepare_sft(cfg, data_dir=data, today=DAY)
+    assert manifest.num_examples == 4
+    assert any("eval_overlap_dedup=skipped(no_eval_suites)" in p for p in manifest.preprocessing)
