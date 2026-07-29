@@ -149,6 +149,81 @@ def _build_eval_index(
             index.setdefault(sh, []).append(idx)
     return records, index
 
+class _EvalMatcher:
+    """A prep-time eval-overlap predicate: ``overlaps(prompt)`` is True when the prompt exactly
+    matches or is a >= ``threshold`` Jaccard near-duplicate of any prepared eval prompt. Uses the
+    same complete index and shingle/Jaccard machinery as the train_eval_overlap gate, so excluding
+    at a threshold makes the gate (at that same threshold) pass by construction. The index is built
+    once and reused across every candidate.
+    """
+
+    def __init__(
+        self,
+        eval_records: list[dict],
+        index: dict[str, list[int]],
+        threshold: float,
+        suites: list[str],
+    ):
+        self._eval = eval_records
+        self._index = index
+        self.threshold = threshold
+        self.suites = suites  # sorted "name:sha12" of each eval suite deduped against (audit trail)
+
+    def overlaps(self, text: str) -> bool:
+        t_norm = normalize_prompt(text)
+        t_sh = _shingle_norm(t_norm)
+        if not t_sh:
+            return False
+        counts: dict[int, int] = {}
+        for sh in t_sh:
+            for e_idx in self._index.get(sh, ()):
+                counts[e_idx] = counts.get(e_idx, 0) + 1
+        for e_idx, shared in counts.items():
+            er = self._eval[e_idx]
+            denom = len(t_sh) + len(er["_shingles"]) - shared
+            j = shared / denom if denom else 1.0
+            if t_norm == er["_norm"] or j >= self.threshold:
+                return True
+        return False
+
+
+def build_eval_matcher(
+    data_dir: str | Path = "data", *, threshold: float = _DEFAULT_THRESHOLD
+) -> _EvalMatcher | None:
+    """Build an eval-overlap predicate over every prepared eval suite (each prepared split whose
+    name does not start with "train" -- the eval side the gate uses). Returns None when no eval
+    suites are present, so a caller can proceed while the fail-closed train_eval_overlap gate stays
+    the authoritative check. Surfaces no raw prompt text.
+    """
+    data_dir = Path(data_dir)
+    eval_files = [p for p in _iter_prepared(data_dir) if not _split_of(p).startswith("train")]
+    if not eval_files:
+        return None
+    eval_records, index = _build_eval_index(eval_files)
+    suites = sorted(
+        f"{p.stem}:{hashlib.sha256(p.read_bytes()).hexdigest()[:12]}" for p in eval_files
+    )
+    return _EvalMatcher(eval_records, index, threshold, suites)
+
+def missing_eval_suites(data_dir: str | Path = "data") -> list[str]:
+    """Committed eval suites (a manifest under data_dir/manifests whose split starts with "eval")
+    whose prepared JSONL is absent. SFT prep fails closed on any of these: deduping train_sft
+    against only a SUBSET of the eval suites would silently miss leaks onto the missing ones
+    (ADR-0015 names eval_dual_use the highest-priority target), and the train_eval_overlap gate
+    would then pass vacuously against the absent suite. Returns sorted suite names; empty when the
+    complete committed eval set is prepared (or no eval manifests are committed, e.g. in tests).
+    """
+    data_dir = Path(data_dir)
+    manifests_dir = data_dir / "manifests"
+    if not manifests_dir.exists():
+        return []
+    missing: list[str] = []
+    for mpath in sorted(manifests_dir.glob("*.yaml")):
+        manifest = load_manifest(mpath)
+        if manifest.split.startswith("eval") and not _prepared_path(manifest, data_dir).exists():
+            missing.append(manifest.name)
+    return sorted(missing)
+
 
 def train_eval_overlap(
     train_split: str,

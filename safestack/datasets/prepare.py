@@ -222,10 +222,13 @@ def _cell(value: object) -> str:
     return str(value).strip()
 
 
-def prepare_sft_records(rows: list[dict], cfg: SFTPrepConfig) -> list[SFTRecord]:
+def prepare_sft_records(
+    rows: list[dict], cfg: SFTPrepConfig, *, eval_matcher=None
+) -> list[SFTRecord]:
     seen: set[str] = set()
     group_counts: dict[str, int] = {}
     out: list[SFTRecord] = []
+    n_excluded = 0
     for row in rows:
         if any(str(row.get(k)) != v for k, v in cfg.filter.items()):
             continue
@@ -241,6 +244,14 @@ def prepare_sft_records(rows: list[dict], cfg: SFTPrepConfig) -> list[SFTRecord]
         data_type = _cell(row.get(cfg.data_type_column)) if cfg.data_type_column else ""
         if cfg.max_per_group is not None and group_counts.get(data_type, 0) >= cfg.max_per_group:
             continue  # keep the refuse/comply blend balanced across data_type groups
+        if eval_matcher is not None and eval_matcher.overlaps(prompt):
+            # Leakage: a prompt that near-duplicates an eval item would contaminate that eval, so
+            # drop it BEFORE it takes a group slot -- the freed slot backfills from the next clean
+            # row, keeping the refuse/comply blend balanced (ADR-0015 decision 2). Mark it seen so
+            # its duplicates skip cheaply.
+            seen.add(norm)
+            n_excluded += 1
+            continue
         seen.add(norm)
         group_counts[data_type] = group_counts.get(data_type, 0) + 1
         out.append(
@@ -260,6 +271,14 @@ def prepare_sft_records(rows: list[dict], cfg: SFTPrepConfig) -> list[SFTRecord]
         )
         if cfg.max_examples is not None and len(out) >= cfg.max_examples:
             break
+    if n_excluded:
+        log.warning(
+            "prepare_sft(%s): excluded %d train example(s) overlapping eval prompts "
+            "(jaccard >= %.2f)",
+            cfg.name,
+            n_excluded,
+            eval_matcher.threshold,
+        )
     return out
 
 
@@ -282,7 +301,27 @@ def prepare_sft(
 ) -> DatasetManifest:
     data_dir = Path(data_dir)
     _preflight(cfg, data_dir)
-    records = prepare_sft_records(load_source(cfg), cfg)
+    # Exclude train prompts overlapping any eval suite so train_sft is disjoint by construction and
+    # the train_eval_overlap gate passes. Lazy import breaks the prepare<->validate module cycle.
+    from safestack.datasets.validate import build_eval_matcher, missing_eval_suites
+
+    missing = missing_eval_suites(data_dir)
+    if missing:
+        raise ValueError(
+            f"prepare_sft({cfg.name}): {len(missing)} committed eval suite(s) not prepared under "
+            f"{data_dir / 'prepared'}: {missing}. Prepare every eval suite first so train_sft is "
+            "deduped against the COMPLETE eval set -- a partial set would silently miss leaks onto "
+            "the absent suite(s) (ADR-0015 follow-up 2)."
+        )
+    eval_matcher = build_eval_matcher(data_dir)
+    if eval_matcher is None:
+        log.warning(
+            "prepare_sft(%s): no prepared eval suites under %s -- skipping eval-overlap exclusion; "
+            "the train_eval_overlap gate stays fail-closed until the eval suites are prepared",
+            cfg.name,
+            data_dir / "prepared",
+        )
+    records = prepare_sft_records(load_source(cfg), cfg, eval_matcher=eval_matcher)
     preprocessing = [
         f"hf_revision={cfg.hf_revision}",
         f"hf_config={cfg.hf_config}" if cfg.hf_config else "hf_config=none",
@@ -298,6 +337,11 @@ def prepare_sft(
         *([f"max_per_group={cfg.max_per_group}"] if cfg.max_per_group is not None else []),
         "normalized_whitespace_case_exact_dedup",
         "refuse_harmful_comply_benign_blend",
+        (
+            f"eval_overlap_dedup(threshold={eval_matcher.threshold}, suites={eval_matcher.suites})"
+            if eval_matcher is not None
+            else "eval_overlap_dedup=skipped(no_eval_suites)"
+        ),
         f"public_release={cfg.public_release}",
     ]
     return _write_suite(
