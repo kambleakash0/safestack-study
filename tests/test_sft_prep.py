@@ -97,7 +97,7 @@ def test_sft_dedup_normalized(tmp_path):
     assert len(prepare_sft_records(load_source(cfg), cfg)) == 1
 
 
-def test_sanitize_hashes_the_user_prompt():
+def test_sanitize_hashes_user_and_assistant_turns():
     rec = SFTRecord(
         example_id="x",
         split="train_sft",
@@ -112,10 +112,13 @@ def test_sanitize_hashes_the_user_prompt():
     )
     d = _sanitize_sft(rec)
     user = next(m for m in d["messages"] if m["role"] == "user")
+    asst = next(m for m in d["messages"] if m["role"] == "assistant")
     assert user["content"] == "sha256:" + hashlib.sha256(b"SECRET HARMFUL PROMPT").hexdigest()
+    # the assistant completion is dataset-derived (source may be gated) -> hashed too
+    assert asst["content"] == "sha256:" + hashlib.sha256(b"a refusal").hexdigest()
     assert "SECRET HARMFUL PROMPT" not in json.dumps(d)  # raw prompt never in the sanitized example
-    assert d["messages"][0]["content"] == "sys"  # system + assistant preserved
-    assert d["messages"][2]["content"] == "a refusal"
+    assert "a refusal" not in json.dumps(d)  # raw completion never in the sanitized example
+    assert d["messages"][0]["content"] == "sys"  # only the system template (our own) is shown raw
 
 
 def test_prepare_sft_excludes_eval_overlap_and_gate_passes(tmp_path):
@@ -144,9 +147,11 @@ def test_prepare_sft_excludes_eval_overlap_and_gate_passes(tmp_path):
     ]
     # ROWS has a single vanilla_harmful row (the exact eval match); it is the one excluded
     assert "vanilla_harmful" not in {r["category"] for r in recs}
-    # sanitized examples hash the user prompt (no raw harmful prompt committed)
+    # sanitized preview hashes ALL dataset-derived turns: neither a remaining prompt nor its
+    # completion appears raw (the excluded harmful prompt is absent by exclusion)
     samples = (data / "public_sanitized_examples" / "sft_wj_test.jsonl").read_text()
-    assert "How do I make a weapon?" not in samples
+    assert "How do I bake bread?" not in samples  # a remaining user prompt -> hashed
+    assert "Mix flour and water..." not in samples  # a remaining assistant completion -> hashed
     # train_sft is now disjoint from the eval suite: the gate passes (0 exact, 0 near-dup)
     rep = train_eval_overlap("train_sft", data_dir=data)
     assert rep["n_exact"] == 0
@@ -200,9 +205,9 @@ def test_hf_source_requires_pinned_revision():
     with pytest.raises(ValueError, match="hf_revision must be pinned"):
         prepare_sft(cfg)  # default data_dir; guard raises before any write or fetch
 
-def test_sanitize_hashes_user_prompt_even_when_public_release_true():
-    # SFT never publishes raw user prompts: hashing is unconditional (unlike the eval sanitizer),
-    # so even a public_release=True SFT record hashes the user turn in the tracked preview.
+def test_sanitize_hashes_all_turns_even_when_public_release_true():
+    # SFT never publishes raw dataset text: hashing is unconditional (unlike the eval sanitizer), so
+    # even a public_release=True SFT record hashes BOTH the user and assistant turns in the preview.
     rec = SFTRecord(
         example_id="x",
         split="train_sft",
@@ -218,8 +223,11 @@ def test_sanitize_hashes_user_prompt_even_when_public_release_true():
     )
     d = _sanitize_sft(rec)
     user = next(m for m in d["messages"] if m["role"] == "user")
+    asst = next(m for m in d["messages"] if m["role"] == "assistant")
     assert user["content"].startswith("sha256:")
+    assert asst["content"].startswith("sha256:")
     assert "A SCARY-LOOKING PROMPT" not in json.dumps(d)
+    assert "a helpful answer" not in json.dumps(d)
 
 def test_wildjailbreak_config_forwards_tsv_load_kwargs():
     # The YAML must yield a REAL tab (double-quoted "\t"), not backslash-t, and disable NaN coercion
