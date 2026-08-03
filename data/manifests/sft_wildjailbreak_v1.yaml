@@ -1,0 +1,30 @@
+name: sft_wildjailbreak_v1
+source: allenai/wildjailbreak
+license_notes: 'WildJailbreak (Jiang et al., 2024), ODC-BY, gated on HF (accept AI2
+  Responsible Use Guidelines). Contrastive safety-SFT: harmful prompts -> refusals,
+  benign-looking prompts -> helpful compliance -- the refuse-harmful + comply-benign
+  blend that guards mode collapse (ADR-0015 dec.2). Columns [vanilla, adversarial,
+  tactics, completion, data_type] verified from the dataset card; PIN hf_revision
+  before the run. WildJailbreak ships as TSV; the hf_load_kwargs key forwards the
+  dataset card''s delimiter/keep_default_na so the tab-delimited file parses (verified
+  vs the card).'
+created_at: '2026-07-29'
+num_examples: 10000
+split: train_sft
+hash: sha256:34018e6c1356fd007fcaac2138ce6d9d288c566c1f8037e2b79fe2958c95a4fc
+preprocessing:
+- hf_revision=5ddc12a7894f842b0619b8e1c7ee496b198af009
+- hf_config=train
+- filter=none
+- prompt_column=adversarial
+- prompt_fallback_column=vanilla
+- response_column=completion
+- data_type_column=data_type
+- max_per_group=2500
+- normalized_whitespace_case_exact_dedup
+- refuse_harmful_comply_benign_blend
+- eval_overlap_dedup(threshold=0.7, suites=['dualuse_harmbench_contextual_v1:52ced8ea6b4a',
+  'harmful_advbench_v1:a80ecfba71fa', 'harmful_harmbench_v1:1aabe6806d14', 'helpfulness_alpaca_v1:31d0aa39d2f6',
+  'overrefusal_xstest_v1:24bd1fad943d'])
+- public_release=False
+schema_version: 1

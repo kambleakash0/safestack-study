@@ -1,8 +1,8 @@
 name: sft_wildjailbreak_v1
 source: allenai/wildjailbreak
 hf_config: train            # configs are {train ~261K, eval ~2210}; "train" is the SFT split we use
-hf_revision: null           # PIN the commit SHA before prep -- prepare-sft REFUSES to run unpinned
-                            # (reproducibility, ADR-0004); accept the gated AI2 terms first
+hf_revision: 5ddc12a7894f842b0619b8e1c7ee496b198af009  # pinned dataset commit (reproducibility,
+                            # ADR-0004); prepare-sft REFUSES to run unpinned. Gated: accept AI2 terms.
 hf_split: train
 # WildJailbreak ships as TSV. Forward the dataset card's documented load kwargs so the tab-delimited
 # file parses and empty `adversarial` cells stay "" instead of NaN. Double-quoted "\t" so YAML emits a
