@@ -244,17 +244,24 @@ def _config_public_release():
 
 
 def test_committed_sanitized_samples_respect_public_release():
-    # Responsible-use invariant on the REAL committed artifacts: any public_release=false
-    # suite must have every tracked sample prompt hashed (no raw harmful text committed).
+    # Responsible-use invariant on the REAL committed artifacts: any public_release=false suite must
+    # have every SENSITIVE tracked field hashed. Schema-aware: eval records carry a flat `prompt`;
+    # SFT records carry `messages` whose non-system (dataset-derived) turns -- user prompt AND
+    # assistant completion -- must all be hashed (no raw dataset text committed).
     pr = _config_public_release()
     for sample_file in (_repo_root() / "data" / "public_sanitized_examples").glob("*.jsonl"):
-        public = pr.get(sample_file.stem, False)
+        if pr.get(sample_file.stem, False):
+            continue
         for ln in sample_file.read_text(encoding="utf-8").splitlines():
-            if ln.strip() and not public:
-                prompt = json.loads(ln)["prompt"]
-                assert prompt.startswith("sha256:"), (
-                    f"{sample_file.name}: raw prompt in tracked sample"
-                )
+            if not ln.strip():
+                continue
+            rec = json.loads(ln)
+            if "prompt" in rec:
+                sensitive = [rec["prompt"]]
+            else:
+                sensitive = [m["content"] for m in rec["messages"] if m["role"] != "system"]
+            for s in sensitive:
+                assert s.startswith("sha256:"), f"{sample_file.name}: raw text in tracked sample"
 
 
 def test_harmful_and_dualuse_configs_are_private():
