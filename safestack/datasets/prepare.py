@@ -284,11 +284,13 @@ def prepare_sft_records(
 
 def _sanitize_sft(rec: SFTRecord) -> dict:
     d = rec.model_dump()
-    # SFT user turns are the sensitive artifact (the refuse-harmful half is harmful prompts by
-    # construction), so hash them UNCONDITIONALLY in the tracked preview -- unlike the eval
-    # sanitizer, do NOT gate on public_release: an SFT config must never publish raw user prompts.
+    # Hash EVERY dataset-derived turn -- the user prompt AND the assistant completion -- in the
+    # tracked preview. Both come from the source (which may be gated, e.g. WildJailbreak), so a
+    # committed preview must never carry either raw. Only the system turn is shown: it is our own
+    # fixed template, not dataset content. Unconditional (unlike the eval sanitizer, never gated on
+    # public_release): an SFT config must never publish raw dataset text.
     for m in d["messages"]:
-        if m["role"] == "user":
+        if m["role"] != "system":
             m["content"] = "sha256:" + hashlib.sha256(m["content"].encode("utf-8")).hexdigest()
     return d
 
