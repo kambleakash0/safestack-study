@@ -292,7 +292,7 @@ def train_sft(
     tokenizer.save_pretrained(cfg.output_adapter)
     curves = loss_curves(trainer.state.log_history)
     curves_path = _write_curves(
-        cfg, curves, spec, len(train_recs), len(val_recs), precision, today
+        cfg, curves, spec, len(prepped_train), len(prepped_val), precision, today
     )
     log.warning(
         "train_sft(%s): saved adapter -> %s, curves -> %s",
@@ -302,8 +302,8 @@ def train_sft(
     )
     return {
         "adapter": cfg.output_adapter,
-        "n_train": len(train_recs),
-        "n_val": len(val_recs),
+        "n_train": len(prepped_train),
+        "n_val": len(prepped_val),
         "curves_path": str(curves_path),
         "final_train_loss": curves["train"][-1]["loss"] if curves["train"] else None,
         "final_val_loss": curves["val"][-1]["eval_loss"] if curves["val"] else None,
