@@ -198,7 +198,13 @@ def train_sft(
             )
         return exs
 
-    train_ds = Dataset.from_list(_prep(train_recs))
+    prepped_train = _prep(train_recs)
+    if not prepped_train:
+        raise ValueError(
+            f"train_sft({cfg.name}): no usable train examples -- all {len(train_recs)} dropped "
+            f"(every prompt exceeds max_seq_length {cfg.max_seq_length}); raise it or fix the data"
+        )
+    train_ds = Dataset.from_list(prepped_train)
     prepped_val = _prep(val_recs) if val_recs else []
     val_ds = Dataset.from_list(prepped_val) if prepped_val else None
 
