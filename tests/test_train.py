@@ -134,6 +134,13 @@ def test_train_val_split_deterministic_and_partitioned():
     assert {r["i"] for r in t1} | {r["i"] for r in v1} == set(range(20))  # disjoint + complete
 
 
+def test_train_val_split_keeps_one_val_for_small_suites():
+    # A small suite at the default 0.05 fraction floors to 0 val; keep at least one so val loss is
+    # still tracked (never binds on the 10k train_sft -- 500 val -- but guards tiny suites).
+    t, v = train_val_split([{"i": i} for i in range(8)], 0.05, seed=1)
+    assert len(v) == 1 and len(t) == 7
+
+
 def test_load_train_records_reads_and_missing_raises(tmp_path):
     d = tmp_path / "data" / "prepared" / "train_sft"
     d.mkdir(parents=True)

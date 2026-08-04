@@ -50,6 +50,8 @@ def train_val_split(
     idx = list(range(len(records)))
     random.Random(seed).shuffle(idx)
     n_val = int(len(records) * val_fraction)
+    if val_fraction > 0 and n_val == 0 and len(records) > 1:
+        n_val = 1  # keep >= 1 val example when a split is requested, so val loss is always tracked
     val_ids = set(idx[:n_val])
     train = [r for i, r in enumerate(records) if i not in val_ids]
     val = [r for i, r in enumerate(records) if i in val_ids]
