@@ -205,7 +205,9 @@ def train_sft(
         BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            # bf16 on bf16-capable GPUs (A100), else fp16 -- the standard QLoRA dequant compute
+            # dtype (never forced bf16 on hardware without it), independent of the load dtype.
+            bnb_4bit_compute_dtype=torch.bfloat16 if cfg.bf16 else torch.float16,
             bnb_4bit_use_double_quant=True,
         )
         if cfg.load_in_4bit
