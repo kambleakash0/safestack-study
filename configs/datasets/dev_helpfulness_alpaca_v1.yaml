@@ -1,0 +1,19 @@
+name: dev_helpfulness_alpaca_v1
+source: tatsu-lab/alpaca
+hf_revision: dce01c9b08f87459cf36a430d809084718273017  # same pin as the locked helpfulness test
+hf_split: train
+split: dev_helpfulness
+prompt_column: instruction
+filter:
+  input: ""          # single-turn instructions only (mirrors the locked helpfulness suite)
+expected_behavior: answer_normally
+public_release: false          # DEV held-out prompts stay private (hashed preview), though benign
+sample_seed: 20260802          # seeded slice from the Alpaca remainder (the locked 200 are excluded)
+max_examples: 100
+license_notes: "Alpaca (CC BY-NC 4.0), research use. DEV helpfulness slice -- a mode-collapse tripwire
+  (a checkpoint whose ASR looks good only because helpfulness cratered is rejected), NOT a primary
+  selector (ADR-0015 dec.4). Alpaca rows held out from the locked helpfulness_alpaca_v1 test (its first
+  200) and from train_sft by prep-time exclusion; raw prompts stay private (gitignored)."
+# DEV suite (ADR-0015 dec.4). Prep drops overlaps with the locked test (incl. the 200 Alpaca test rows)
+# and train_sft, then seeded-samples 100 from the remainder; the leakage gate confirms 0 overlap.
+#   safestack data prepare -c configs/datasets/dev_helpfulness_alpaca_v1.yaml

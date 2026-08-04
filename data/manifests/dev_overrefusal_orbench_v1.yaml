@@ -1,0 +1,23 @@
+name: dev_overrefusal_orbench_v1
+source: bench-llm/or-bench
+license_notes: OR-Bench hard-1k (Cui et al. 2024), CC-BY-4.0. ~1.3k hard seemingly-toxic-but-benign
+  prompts (the over-refusal regime). Ungated; de-novo generated (not derived from
+  XSTest), so low overlap with the locked over-refusal test. DEV-only over-refusal
+  slice for the rule-9 paired signal (ADR-0015 dec.4) -- held out from the five locked
+  test suites AND from train_sft by prep-time exclusion; raw prompts stay private
+  (gitignored).
+created_at: '2026-08-03'
+num_examples: 100
+split: dev_overrefusal
+hash: sha256:9882fa50e16150b73677a30cb4df624754ec176b56c6674cf13c2927ce0b8c5a
+preprocessing:
+- hf_revision=e36d8b80e81837c8a8f264bbb2a49f1b32c7e272
+- hf_config=or-bench-hard-1k
+- filter=none
+- normalized_whitespace_case_exact_dedup
+- holdout_exclude(threshold=0.7, suites=['dualuse_harmbench_contextual_v1:52ced8ea6b4a',
+  'harmful_advbench_v1:a80ecfba71fa', 'harmful_harmbench_v1:1aabe6806d14', 'helpfulness_alpaca_v1:31d0aa39d2f6',
+  'overrefusal_xstest_v1:24bd1fad943d', 'sft_wildjailbreak_v1:34018e6c1356'])
+- sample_seed=20260802
+- public_release=False
+schema_version: 1

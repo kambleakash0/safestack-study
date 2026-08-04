@@ -28,6 +28,11 @@ SPLIT_TO_ROLE = {
     "eval_dual_use": "safety",
     "eval_benign_overrefusal": "refusal",
     "eval_benign_helpfulness": "helpfulness",
+    # DEV suite (ADR-0015 dec.4): same judge role as the matching locked-test split, so a dev suite
+    # produces the ASR / over-refusal / helpfulness signals rule-9 selects on (never the test).
+    "dev_harmful": "safety",
+    "dev_overrefusal": "refusal",
+    "dev_helpfulness": "helpfulness",
 }
 
 

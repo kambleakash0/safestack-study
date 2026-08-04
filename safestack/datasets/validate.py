@@ -187,31 +187,55 @@ class _EvalMatcher:
         return False
 
 
+def _matcher_over(files: list[Path], threshold: float) -> _EvalMatcher | None:
+    """A matcher over the given prepared files (None if empty). Shared by build_eval_matcher (the
+    non-train side) and build_holdout_matcher (the non-dev side: the locked test + train_sft).
+    """
+    if not files:
+        return None
+    records, index = _build_eval_index(files)
+    suites = sorted(f"{p.stem}:{hashlib.sha256(p.read_bytes()).hexdigest()[:12]}" for p in files)
+    return _EvalMatcher(records, index, threshold, suites)
+
 def build_eval_matcher(
     data_dir: str | Path = "data", *, threshold: float = _DEFAULT_THRESHOLD
 ) -> _EvalMatcher | None:
-    """Build an eval-overlap predicate over every prepared eval suite (each prepared split whose
-    name does not start with "train" -- the eval side the gate uses). Returns None when no eval
-    suites are present, so a caller can proceed while the fail-closed train_eval_overlap gate stays
-    the authoritative check. Surfaces no raw prompt text.
+    """Build an eval-overlap predicate over every prepared split whose name does not start with
+    "train" -- what SFT prep excludes train_sft against. This "non-train" set also covers any
+    prepared dev_* slices, so train_sft is held disjoint from the dev suite too (whichever of
+    train/dev is prepared last excludes the other); re-preparing train_sft after dev exists appends
+    the dev suites to its audit line, content hash unchanged (dev is disjoint by construction).
+    Returns None when no such suites are present, so a caller can proceed while the fail-closed
+    train_eval_overlap gate stays the authoritative check. Surfaces no raw prompt text.
     """
     data_dir = Path(data_dir)
-    eval_files = [p for p in _iter_prepared(data_dir) if not _split_of(p).startswith("train")]
-    if not eval_files:
-        return None
-    eval_records, index = _build_eval_index(eval_files)
-    suites = sorted(
-        f"{p.stem}:{hashlib.sha256(p.read_bytes()).hexdigest()[:12]}" for p in eval_files
-    )
-    return _EvalMatcher(eval_records, index, threshold, suites)
+    files = [p for p in _iter_prepared(data_dir) if not _split_of(p).startswith("train")]
+    return _matcher_over(files, threshold)
 
-def missing_eval_suites(data_dir: str | Path = "data") -> list[str]:
-    """Committed eval suites (a manifest under data_dir/manifests whose split starts with "eval")
-    whose prepared JSONL is absent. SFT prep fails closed on any of these: deduping train_sft
-    against only a SUBSET of the eval suites would silently miss leaks onto the missing ones
-    (ADR-0015 names eval_dual_use the highest-priority target), and the train_eval_overlap gate
-    would then pass vacuously against the absent suite. Returns sorted suite names; empty when the
-    complete committed eval set is prepared (or no eval manifests are committed, e.g. in tests).
+
+def build_holdout_matcher(
+    data_dir: str | Path = "data", *, threshold: float = _DEFAULT_THRESHOLD
+) -> _EvalMatcher | None:
+    """Build an overlap predicate over every NON-dev prepared suite -- the five locked test suites
+    and train_sft -- to prepare a held-out DEV slice disjoint from them (ADR-0015 dec.4). Unlike
+    build_eval_matcher (the gate's, which drops train), this DOES include train_sft: a dev prompt
+    the model trained on would be a contaminated selection signal. Scoping the reference to non-dev
+    suites keeps a dev slice's output independent of how many other dev slices exist (reproducible).
+    Returns None if no non-dev suites are present. Identifiers only; surfaces no raw prompt text.
+    """
+    data_dir = Path(data_dir)
+    files = [p for p in _iter_prepared(data_dir) if not _split_of(p).startswith("dev")]
+    return _matcher_over(files, threshold)
+
+def missing_reference_suites(
+    data_dir: str | Path = "data", *, prefixes: tuple[str, ...] = ("eval",)
+) -> list[str]:
+    """Committed suites (manifest split starts with one of ``prefixes``) whose prepared JSONL is
+    absent. Prep fails closed on any: excluding against only a SUBSET of the reference set would
+    silently miss overlaps onto the missing ones (ADR-0015 names eval_dual_use the top target), and
+    the gate would then pass vacuously. SFT prep uses ("eval",); DEV prep uses ("eval", "train") so
+    a dev slice is checked against the full locked test AND train_sft. Returns sorted names; empty
+    when the committed reference set is fully prepared (or none is committed, e.g. in tests).
     """
     data_dir = Path(data_dir)
     manifests_dir = data_dir / "manifests"
@@ -220,7 +244,9 @@ def missing_eval_suites(data_dir: str | Path = "data") -> list[str]:
     missing: list[str] = []
     for mpath in sorted(manifests_dir.glob("*.yaml")):
         manifest = load_manifest(mpath)
-        if manifest.split.startswith("eval") and not _prepared_path(manifest, data_dir).exists():
+        if any(manifest.split.startswith(pre) for pre in prefixes) and not _prepared_path(
+            manifest, data_dir
+        ).exists():
             missing.append(manifest.name)
     return sorted(missing)
 

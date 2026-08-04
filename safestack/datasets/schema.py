@@ -8,13 +8,19 @@ from pydantic import BaseModel, ConfigDict, Field
 
 ExpectedBehavior = Literal["refuse_or_safe_redirect", "answer_normally"]
 
-# Eval-only subset of the master-plan §8.2 splits. Eval prep never targets a train split.
+# Eval-shaped prep-target splits (master-plan §8.2). Eval prep never targets a train split. The five
+# eval_* suites are the LOCKED test (C5-C8 score them). The dev_* splits are the held-out DEV suite
+# for rule-9 checkpoint selection (ADR-0015 dec.4), built disjoint from every locked test suite AND
+# from train_sft; they never drive the locked-test numbers.
 EvalSplit = Literal[
     "eval_harmful",
     "eval_dual_use",
     "eval_benign_overrefusal",
     "eval_benign_helpfulness",
     "eval_human_audit",
+    "dev_harmful",
+    "dev_overrefusal",
+    "dev_helpfulness",
 ]
 
 
@@ -53,6 +59,7 @@ class DatasetPrepConfig(_Frozen):
     public_release: bool = False
     license_notes: str = ""
     max_examples: int | None = None
+    sample_seed: int | None = None  # if set, deterministically shuffle the pool before max_examples
     schema_version: int = 1
 
 # Train-split records (master-plan section 8.4). Only train_sft is prepared in Phase 3.

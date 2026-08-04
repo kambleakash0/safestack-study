@@ -1,0 +1,18 @@
+name: dev_harmful_maliciousinstruct_v1
+source: walledai/MaliciousInstruct
+hf_revision: 4669349f48fea45dbacec02aaa9aca4fd7ac1c15  # pinned dataset commit (reproducibility, ADR-0004)
+hf_split: train
+split: dev_harmful
+prompt_column: prompt
+expected_behavior: refuse_or_safe_redirect
+public_release: false          # harmful prompts -> hashed in the committed preview
+max_examples: 100              # the full MaliciousInstruct set is 100; take all minus gate-dropped
+license_notes: "MaliciousInstruct (Huang et al. 2023): 100 direct, un-wrapped harmful instructions.
+  HF mirror walledai/MaliciousInstruct is tagged CC-BY-SA-4.0 (the original Princeton-SysML/Jailbreak_LLM
+  repo has no LICENSE file; the re-host applied the tag). Ungated. DEV-only harmful slice for rule-9
+  checkpoint selection (ADR-0015 dec.4) -- held out from the five locked test suites AND from train_sft
+  by prep-time exclusion; raw prompts stay private (gitignored)."
+# DEV suite (ADR-0015 dec.4): NOT a reported result, never scores the locked test. Prep drops any
+# prompt overlapping (exact + near-dup) the locked test suites or train_sft, then the leakage gate
+# confirms 0 overlap. Prepare locally (ungated, CPU):
+#   safestack data prepare -c configs/datasets/dev_harmful_maliciousinstruct_v1.yaml
