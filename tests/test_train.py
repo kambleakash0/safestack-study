@@ -156,6 +156,57 @@ def test_loss_curves_extracts_train_and_val():
     assert c["val"] == [{"step": 10, "eval_loss": 2.5}]
 
 
+@pytest.mark.hf
+def test_train_sft_end_to_end_tiny(tmp_path, monkeypatch):
+    # End-to-end wiring smoke on a tiny instruct model, CPU + load_in_4bit=False (no bitsandbytes):
+    # exercises tokenize -> assistant-only mask -> LoRA -> transformers Trainer -> save adapter ->
+    # curves. The 4-bit / bf16 / GPU paths are Colab-verified. Needs the train extra; hf-marked.
+    import yaml as yamllib
+
+    from safestack.train.sft import train_sft
+
+    data = tmp_path / "data"
+    (data / "prepared" / "train_sft").mkdir(parents=True)
+    recs = [
+        {"example_id": f"e{i}", "split": "train_sft", "category": "vanilla_benign",
+         "messages": [
+             {"role": "system", "content": "You follow safety policy."},
+             {"role": "user", "content": f"Please greet person {i}."},
+             {"role": "assistant", "content": "Hello there, happy to help."},
+         ],
+         "safety_label": "helpful_compliance", "source_dataset": "s"}
+        for i in range(6)
+    ]
+    (data / "prepared" / "train_sft" / "sft_tiny.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8"
+    )
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "tiny.yaml").write_text(
+        yamllib.safe_dump({
+            "model_id": "tiny",
+            "backend": "hf_local",
+            "checkpoint": "HuggingFaceTB/SmolLM2-135M-Instruct",
+            "dtype": "float32",
+            "device": "cpu",
+        }),
+        encoding="utf-8",
+    )
+    cfg = SFTTrainConfig(
+        name="sft_tiny", base_model="tiny", train_suite="sft_tiny",
+        output_adapter=str(tmp_path / "adapter"),
+        load_in_4bit=False, bf16=False, gradient_checkpointing=False,
+        num_train_epochs=1, per_device_train_batch_size=2, gradient_accumulation_steps=1,
+        max_seq_length=128, val_fraction=0.34, logging_steps=1,
+        lora_target_modules=["q_proj", "v_proj"],
+    )
+    monkeypatch.chdir(tmp_path)  # curves are written under a relative reports/ dir
+    summary = train_sft(cfg, data_dir=data, models_dir=models)
+    assert (tmp_path / "adapter" / "adapter_config.json").exists()  # LoRA adapter saved
+    assert summary["n_train"] >= 1 and summary["final_train_loss"] is not None
+    assert (tmp_path / "reports" / "train_curves" / "sft_tiny.json").exists()
+
+
 def test_train_cli_mounted_and_torch_free():
     # Importing the CLI (which imports the trainer) must succeed in the base env with no torch
     # installed, proving the heavy deps are lazy-imported inside train_sft; and `train` is mounted.

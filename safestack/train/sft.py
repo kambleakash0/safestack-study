@@ -215,7 +215,7 @@ def train_sft(
         spec.checkpoint,
         revision=spec.revision,
         quantization_config=quant,
-        dtype=torch.bfloat16,
+        dtype=torch.bfloat16 if cfg.bf16 else torch.float32,  # match the training precision
         device_map="auto",
     )
     if cfg.load_in_4bit:
