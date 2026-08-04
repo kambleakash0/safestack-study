@@ -10,6 +10,7 @@ import typer
 from safestack.datasets.cli import app as data_app
 from safestack.eval.cli import app as eval_app
 from safestack.runner import run_experiment
+from safestack.train.cli import app as train_app
 
 app = typer.Typer(
     help="SafeStack: defense-in-depth LLM safety evaluation.",
@@ -52,3 +53,5 @@ def main() -> None:
 app.add_typer(data_app, name="data")
 
 app.add_typer(eval_app, name="eval")
+
+app.add_typer(train_app, name="train")

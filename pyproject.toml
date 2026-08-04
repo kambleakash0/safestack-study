@@ -26,6 +26,16 @@ api = [
     "httpx>=0.27",
 ]
 data = ["datasets>=3"]
+# SFT training (LoRA/QLoRA): the hf + data stack plus bitsandbytes/accelerate. Kept out of `hf` so the
+# eval/inference path stays lean. bitsandbytes (4-bit QLoRA) is CUDA-only, so this extra is installed on
+# the GPU box (Colab), not the mock/CI path -- the pure trainer tests import nothing from it (the
+# trainer lazy-imports torch/transformers/peft inside the training call). Assistant-only loss is done
+# with a length-based label mask on transformers Trainer, so no trl dependency.
+train = [
+    "safestack[hf,data]",
+    "bitsandbytes>=0.43",
+    "accelerate>=0.30",
+]
 
 [project.scripts]
 safestack = "safestack.cli:app"

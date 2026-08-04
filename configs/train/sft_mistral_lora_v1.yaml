@@ -1,0 +1,32 @@
+name: sft_mistral_lora_v1
+base_model: mistral_7b_instruct       # committed base card (checkpoint mistralai/Mistral-7B-Instruct-v0.3
+                                      # + pinned revision c170c708...); frozen, ADR-0002/0004
+train_suite: sft_wildjailbreak_v1     # prepared train_sft (manifest pins the WildJailbreak rev + hash)
+output_adapter: adapters/sft_mistral_lora_v1   # PRIVATE: adapters/ is gitignored, never committed
+
+# LoRA (ADR-0015 decision 3)
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+
+# optimisation (master-plan starting hyperparameters)
+learning_rate: 2.0e-5
+num_train_epochs: 1
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4        # effective batch 16 (tune to the actual GPU's VRAM)
+max_seq_length: 2048
+
+# memory (ADR-0003: 7B QLoRA at a 16-24 GB single-GPU target)
+load_in_4bit: true
+gradient_checkpointing: true
+bf16: true
+
+# reproducibility + tracked validation loss (curves committed; NOT a selection knob -- rule 9)
+seed: 20250115
+val_fraction: 0.05
+save_strategy: epoch
+# lora_target_modules / warmup_ratio / weight_decay / lr_scheduler_type / logging_steps use config
+# defaults (Mistral q/k/v/o + gate/up/down projections; cosine schedule; 0.03 warmup).
+#
+# Train on Colab (needs the `train` extra + a GPU; adapter weights stay private):
+#   safestack train sft -c configs/train/sft_mistral_lora_v1.yaml
