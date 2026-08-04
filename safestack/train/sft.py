@@ -107,7 +107,7 @@ def loss_curves(log_history: list[dict]) -> dict:
 
 
 def _write_curves(
-    cfg: SFTTrainConfig, curves: dict, spec, n_train: int, n_val: int, today
+    cfg: SFTTrainConfig, curves: dict, spec, n_train: int, n_val: int, precision: str, today
 ) -> Path:
     from datetime import date
 
@@ -128,6 +128,7 @@ def _write_curves(
             "num_train_epochs": cfg.num_train_epochs,
             "max_seq_length": cfg.max_seq_length,
             "load_in_4bit": cfg.load_in_4bit,
+            "precision": precision,
             "seed": cfg.seed,
         },
         "curves": curves,
@@ -201,13 +202,26 @@ def train_sft(
     prepped_val = _prep(val_recs) if val_recs else []
     val_ds = Dataset.from_list(prepped_val) if prepped_val else None
 
+    # Resolve precision: honor cfg.bf16 only where bf16 is actually supported (e.g. A100), else fall
+    # back to fp16 mixed precision (e.g. a T4) so the pinned bf16 config does not crash on non-bf16
+    # GPUs; CPU / cfg.bf16=false -> fp32. The resolved precision is recorded in the curves.
+    cuda = torch.cuda.is_available()
+    use_bf16 = bool(cfg.bf16 and cuda and torch.cuda.is_bf16_supported())
+    use_fp16 = bool(cfg.bf16 and cuda and not use_bf16)
+    if use_fp16:
+        log.warning(
+            "train_sft(%s): bf16 requested but unsupported on this GPU -- using fp16",
+            cfg.name,
+        )
+    precision = "bf16" if use_bf16 else "fp16" if use_fp16 else "fp32"
+    compute_dtype = torch.bfloat16 if use_bf16 else torch.float16  # 4-bit dequant: bf16 or fp16
+    load_dtype = torch.bfloat16 if use_bf16 else (torch.float16 if use_fp16 else torch.float32)
+
     quant = (
         BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            # bf16 on bf16-capable GPUs (A100), else fp16 -- the standard QLoRA dequant compute
-            # dtype (never forced bf16 on hardware without it), independent of the load dtype.
-            bnb_4bit_compute_dtype=torch.bfloat16 if cfg.bf16 else torch.float16,
+            bnb_4bit_compute_dtype=compute_dtype,  # bf16 (A100) or fp16, resolved above
             bnb_4bit_use_double_quant=True,
         )
         if cfg.load_in_4bit
@@ -217,7 +231,7 @@ def train_sft(
         spec.checkpoint,
         revision=spec.revision,
         quantization_config=quant,
-        dtype=torch.bfloat16 if cfg.bf16 else torch.float32,  # match the training precision
+        dtype=load_dtype,  # bf16 / fp16 / fp32, resolved from cfg.bf16 + GPU support
         device_map="auto",
     )
     if cfg.load_in_4bit:
@@ -251,7 +265,8 @@ def train_sft(
         lr_scheduler_type=cfg.lr_scheduler_type,
         warmup_ratio=cfg.warmup_ratio,
         weight_decay=cfg.weight_decay,
-        bf16=cfg.bf16,
+        bf16=use_bf16,
+        fp16=use_fp16,
         gradient_checkpointing=cfg.gradient_checkpointing,
         logging_steps=cfg.logging_steps,
         save_strategy=cfg.save_strategy,
@@ -270,7 +285,9 @@ def train_sft(
     model.save_pretrained(cfg.output_adapter)  # LoRA adapter only (private, gitignored)
     tokenizer.save_pretrained(cfg.output_adapter)
     curves = loss_curves(trainer.state.log_history)
-    curves_path = _write_curves(cfg, curves, spec, len(train_recs), len(val_recs), today)
+    curves_path = _write_curves(
+        cfg, curves, spec, len(train_recs), len(val_recs), precision, today
+    )
     log.warning(
         "train_sft(%s): saved adapter -> %s, curves -> %s",
         cfg.name,
