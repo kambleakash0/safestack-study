@@ -265,13 +265,16 @@ def test_committed_sanitized_samples_respect_public_release():
 
 
 def test_harmful_and_dualuse_configs_are_private():
-    # Both overtly-harmful and dual-use suites are sensitive (a dual-use prompt is benign-looking
-    # but by construction elicits an unsafe generation), so neither may set public_release: true.
+    # Overtly-harmful and dual-use suites are sensitive (a dual-use prompt is benign-looking but by
+    # construction elicits an unsafe generation), and EVERY held-out dev slice stays private too (a
+    # dev_harmful slice is harmful by construction; all dev prompts are held out, not published).
+    # None may set public_release: true.
     for c in (_repo_root() / "configs" / "datasets").glob("*.yaml"):
         d = yaml.safe_load(c.read_text(encoding="utf-8"))
-        if d.get("split") in ("eval_harmful", "eval_dual_use"):
+        split = d.get("split", "")
+        if split in ("eval_harmful", "eval_dual_use") or split.startswith("dev_"):
             assert d.get("public_release") is False, (
-                f"{c.name}: {d.get('split')} must be public_release: false"
+                f"{c.name}: {split} must be public_release: false"
             )
 
 

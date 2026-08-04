@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import math
+import random
 import re
 from datetime import date
 from pathlib import Path
@@ -39,10 +40,13 @@ def eval_id(suite: str, prompt: str) -> str:
     return f"{suite}-{hashlib.sha256(prompt.encode('utf-8')).hexdigest()[:12]}"
 
 
-def prepare_records(rows: list[dict], cfg: DatasetPrepConfig) -> list[EvalRecord]:
+def prepare_records(
+    rows: list[dict], cfg: DatasetPrepConfig, *, eval_matcher=None
+) -> list[EvalRecord]:
     seen: set[str] = set()
     out: list[EvalRecord] = []
     n_no_context = 0
+    n_excluded = 0
     for row in rows:
         if any(str(row.get(k)) != v for k, v in cfg.filter.items()):
             continue
@@ -63,6 +67,12 @@ def prepare_records(rows: list[dict], cfg: DatasetPrepConfig) -> list[EvalRecord
         norm = normalize_prompt(prompt)
         if norm in seen:
             continue
+        if eval_matcher is not None and eval_matcher.overlaps(prompt):
+            # DEV holdout: drop any candidate overlapping the locked test or train_sft so the dev
+            # slice is disjoint by construction (ADR-0015 dec.4). Mark it seen so dups skip cheaply.
+            seen.add(norm)
+            n_excluded += 1
+            continue
         seen.add(norm)
         category = str(row.get(cfg.category_column) or "") if cfg.category_column else ""
         out.append(
@@ -77,7 +87,12 @@ def prepare_records(rows: list[dict], cfg: DatasetPrepConfig) -> list[EvalRecord
                 public_release=cfg.public_release,
             )
         )
-        if cfg.max_examples is not None and len(out) >= cfg.max_examples:
+        # Source-order early stop only when NOT seeded-sampling (a seed needs the full pool first).
+        if (
+            cfg.sample_seed is None
+            and cfg.max_examples is not None
+            and len(out) >= cfg.max_examples
+        ):
             break
     if n_no_context:
         log.warning(
@@ -87,6 +102,18 @@ def prepare_records(rows: list[dict], cfg: DatasetPrepConfig) -> list[EvalRecord
             n_no_context,
             cfg.context_column,
         )
+    if n_excluded:
+        log.warning(
+            "prepare(%s): excluded %d candidate(s) overlapping the holdout reference "
+            "(jaccard >= %.2f)",
+            cfg.name,
+            n_excluded,
+            eval_matcher.threshold,
+        )
+    if cfg.sample_seed is not None and cfg.max_examples is not None:
+        # Deterministic held-out slice: shuffle the disjoint pool by the committed seed, then cap.
+        random.Random(cfg.sample_seed).shuffle(out)
+        out = out[: cfg.max_examples]
     return out
 
 
@@ -174,7 +201,22 @@ def prepare(
 ) -> DatasetManifest:
     data_dir = Path(data_dir)
     _preflight(cfg, data_dir)
-    records = prepare_records(load_source(cfg), cfg)
+    eval_matcher = None
+    if cfg.split.startswith("dev"):
+        # DEV slice (ADR-0015 dec.4): hold out from the COMPLETE locked test AND train_sft. Fail
+        # closed if that reference set is not fully prepared -- a partial set would silently miss
+        # overlaps and leave a contaminated selection signal. Lazy import breaks a module cycle.
+        from safestack.datasets.validate import build_holdout_matcher, missing_reference_suites
+
+        missing = missing_reference_suites(data_dir, prefixes=("eval", "train"))
+        if missing:
+            raise ValueError(
+                f"prepare({cfg.name}): {len(missing)} reference suite(s) not prepared under "
+                f"{data_dir / 'prepared'}: {missing}. A DEV slice must be held out from the "
+                "complete locked test AND train_sft; prepare those first (ADR-0015 dec.4)."
+            )
+        eval_matcher = build_holdout_matcher(data_dir)
+    records = prepare_records(load_source(cfg), cfg, eval_matcher=eval_matcher)
     preprocessing = [
         f"hf_revision={cfg.hf_revision}",
         f"hf_config={cfg.hf_config}" if cfg.hf_config else "hf_config=none",
@@ -188,6 +230,12 @@ def prepare(
             else []
         ),
         "normalized_whitespace_case_exact_dedup",
+        *(
+            [f"holdout_exclude(threshold={eval_matcher.threshold}, suites={eval_matcher.suites})"]
+            if eval_matcher is not None
+            else []
+        ),
+        *([f"sample_seed={cfg.sample_seed}"] if cfg.sample_seed is not None else []),
         f"public_release={cfg.public_release}",
     ]
     return _write_suite(
@@ -305,9 +353,9 @@ def prepare_sft(
     _preflight(cfg, data_dir)
     # Exclude train prompts overlapping any eval suite so train_sft is disjoint by construction and
     # the train_eval_overlap gate passes. Lazy import breaks the prepare<->validate module cycle.
-    from safestack.datasets.validate import build_eval_matcher, missing_eval_suites
+    from safestack.datasets.validate import build_eval_matcher, missing_reference_suites
 
-    missing = missing_eval_suites(data_dir)
+    missing = missing_reference_suites(data_dir)
     if missing:
         raise ValueError(
             f"prepare_sft({cfg.name}): {len(missing)} committed eval suite(s) not prepared under "

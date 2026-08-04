@@ -1,0 +1,20 @@
+name: dev_overrefusal_orbench_v1
+source: bench-llm/or-bench
+hf_config: or-bench-hard-1k
+hf_revision: e36d8b80e81837c8a8f264bbb2a49f1b32c7e272  # pinned dataset commit (reproducibility, ADR-0004)
+hf_split: train
+split: dev_overrefusal
+prompt_column: prompt
+category_column: category
+expected_behavior: answer_normally
+public_release: false          # seemingly-toxic (but benign) prompts -> hashed in the committed preview
+sample_seed: 20260802          # seeded slice so the ~1.3k hard set is not category-order-skewed
+max_examples: 100
+license_notes: "OR-Bench hard-1k (Cui et al. 2024), CC-BY-4.0. ~1.3k hard seemingly-toxic-but-benign
+  prompts (the over-refusal regime). Ungated; de-novo generated (not derived from XSTest), so low
+  overlap with the locked over-refusal test. DEV-only over-refusal slice for the rule-9 paired signal
+  (ADR-0015 dec.4) -- held out from the five locked test suites AND from train_sft by prep-time
+  exclusion; raw prompts stay private (gitignored)."
+# DEV suite (ADR-0015 dec.4). Prep drops overlaps with the locked test suites / train_sft, then
+# seeded-samples 100 from the hard set; the leakage gate confirms 0 overlap. Prepare locally (CPU):
+#   safestack data prepare -c configs/datasets/dev_overrefusal_orbench_v1.yaml
