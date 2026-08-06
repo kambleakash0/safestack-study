@@ -1,0 +1,19 @@
+model_id: sft_mistral_lora_v1
+backend: hf_local
+# Frozen base = the C1 Mistral card (ADR-0002/0004): identical checkpoint + pinned revision, so the
+# only difference from C1 is the LoRA adapter -- a clean adapter-only C1<->C5 comparison (ADR-0015).
+checkpoint: mistralai/Mistral-7B-Instruct-v0.3
+revision: c170c708c41dac9275d15a8fff4eca08d52bab71  # pinned SHA of Mistral-7B-Instruct-v0.3
+# The SFT LoRA adapter (ADR-0015 dec.3). PRIVATE: it lives in a private HF-Hub repo, never in the
+# public repo (adapters/ is also gitignored locally). Adjust the repo to your HF namespace.
+adapter: kambleakash0/safestack-sft-mistral-lora-v1
+# Immutable adapter pin (ADR-0015 dec.7b): set to the upload commit SHA after the first training run,
+# so C5-C8 share one immutable policy identity and a re-trained adapter is a cache miss. Null until
+# the adapter exists (FU5c trains it, then FU6 pins this + reuses the card for C5-C8).
+adapter_revision:
+chat_template: mistral
+dtype: bfloat16          # bf16 base (not 4-bit) at inference, matching C1 for C1<->C5 comparability
+quantization:            # null: the QLoRA-trained adapter is served on the bf16 base (ADR-0015 dec.6)
+device: cuda
+notes: "SFT policy card (C5-C8). Base+LoRA load needs the ADR-0015 dec.7a gateway path; the mock
+  backend ignores the adapter and still fingerprints distinctly for CI. Runs on a cloud GPU."
