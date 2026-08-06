@@ -173,3 +173,116 @@ def test_provenance_hash_reflects_judgment_content(tmp_path: Path) -> None:
             break
     after = suite_metrics(run_dir, cfg, "harmful_fixture", data_dir=FIX, cache_dir=cache)
     assert before.provenance_hash != after.provenance_hash
+
+# ---- dev-suite metrics (ADR-0015 dec.4 / amendment 1): dev_* splits emit the same selection
+# signals as their locked-test twins, so rule-9 has real inputs. ----
+
+# old fixture -> (new dev name, its eval prepared subdir, its dev split)
+_DEV_MAP = {
+    "harmful_fixture": ("dev_harmful_fixture", "eval_harmful", "dev_harmful"),
+    "overrefusal_fixture": (
+        "dev_overrefusal_fixture", "eval_benign_overrefusal", "dev_overrefusal",
+    ),
+    "helpfulness_fixture": (
+        "dev_helpfulness_fixture", "eval_benign_helpfulness", "dev_helpfulness",
+    ),
+}
+
+
+def _dev_fixture(tmp_path: Path) -> Path:
+    # Clone the eval fixtures under dev splits: rewrite each record's suite + split to the dev names
+    # (so traces join on the dev suite) and recompute the manifest hash over the rewritten file
+    # exactly as validate_manifest does (text mode, line by line).
+    import hashlib
+
+    import yaml
+
+    src = Path(FIX)
+    dst = tmp_path / "devfix"
+    (dst / "manifests").mkdir(parents=True)
+    for old, (new, eval_split, dev_split) in _DEV_MAP.items():
+        out_dir = dst / "prepared" / dev_split
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{new}.jsonl"
+        lines = []
+        raw = (src / "prepared" / eval_split / f"{old}.jsonl").read_text(encoding="utf-8")
+        for ln in raw.splitlines():
+            if not ln.strip():
+                continue
+            rec = json.loads(ln)
+            rec["suite"] = new
+            rec["split"] = dev_split
+            lines.append(json.dumps(rec))
+        out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        h = hashlib.sha256()
+        with open(out_path, encoding="utf-8") as f:
+            for line in f:
+                h.update(line.encode("utf-8"))
+        man = yaml.safe_load((src / "manifests" / f"{old}.yaml").read_text(encoding="utf-8"))
+        man["name"] = new
+        man["split"] = dev_split
+        man["hash"] = "sha256:" + h.hexdigest()
+        (dst / "manifests" / f"{new}.yaml").write_text(yaml.safe_dump(man), encoding="utf-8")
+    return dst
+
+
+def _dev_cfg(suites: list[str]) -> EvalExperimentConfig:
+    return EvalExperimentConfig(
+        experiment_id="dev_metrics",
+        model=ModelSpec(model_id="mock", backend="mock"),
+        suites=suites,
+        safety_judge=ModelSpec(model_id="mock_safety", backend="mock"),
+        helpfulness_judge=ModelSpec(model_id="mock_help", backend="mock"),
+        bootstrap_n=2000,
+    )
+
+
+def test_dev_suites_emit_selection_metrics(tmp_path: Path) -> None:
+    dst = _dev_fixture(tmp_path)
+    cfg = _dev_cfg(["dev_harmful_fixture", "dev_overrefusal_fixture", "dev_helpfulness_fixture"])
+    cache = tmp_path / "cache"
+    run_dir = run_suite(cfg, runs_dir=tmp_path / "runs", data_dir=dst, cache_dir=cache)
+    judge_run(run_dir, cfg=cfg, data_dir=dst, cache_dir=cache)
+
+    h = suite_metrics(run_dir, cfg, "dev_harmful_fixture", data_dir=dst, cache_dir=cache)
+    assert h.split == "dev_harmful"  # the TRUE dev split is recorded for provenance
+    assert _metric(h, "asr").n >= 1  # emitted via the eval_harmful-equivalent branch
+
+    o = suite_metrics(run_dir, cfg, "dev_overrefusal_fixture", data_dir=dst, cache_dir=cache)
+    assert o.split == "dev_overrefusal" and _metric(o, "over_refusal").n >= 1
+
+    hp = suite_metrics(run_dir, cfg, "dev_helpfulness_fixture", data_dir=dst, cache_dir=cache)
+    assert hp.split == "dev_helpfulness"
+    assert "answer_rate" in _metric(hp, "benign_helpfulness").extra  # the tripwire signal
+
+
+def test_dev_paired_reporting_enforced(tmp_path: Path) -> None:
+    # Rule 5 applies to dev too: a dev harmful/ASR suite needs its dev over-refusal + helpfulness
+    # companions in the same run (not the eval ones).
+    dst = _dev_fixture(tmp_path)
+    cfg = _dev_cfg(["dev_harmful_fixture"])
+    cache = tmp_path / "cache"
+    run_dir = run_suite(cfg, runs_dir=tmp_path / "runs", data_dir=dst, cache_dir=cache)
+    judge_run(run_dir, cfg=cfg, data_dir=dst, cache_dir=cache)
+    with pytest.raises(ValueError, match="rule 5"):
+        suite_metrics(run_dir, cfg, "dev_harmful_fixture", data_dir=dst, cache_dir=cache)
+
+def test_answer_rate_counts_missing_generation_as_not_answered(tmp_path: Path) -> None:
+    # The dev-helpfulness answer-rate is the rule-9 tripwire signal; a missing/empty generation must
+    # count as NOT answered (fail-closed) so it cannot inflate the rate and mask a mode collapse.
+    cfg = _cfg()
+    run_dir, cache = _run_and_judge(tmp_path, cfg)
+    full = suite_metrics(run_dir, cfg, "helpfulness_fixture", data_dir=FIX, cache_dir=cache)
+    assert _metric(full, "benign_helpfulness").extra["answer_rate"] == 1.0  # all answered
+
+    # Drop one helpfulness generation (store layout: <cache>/generations/<ab>/<hex>.json).
+    ch = next(
+        json.loads(ln)["content_hash"]
+        for ln in (run_dir / "traces.jsonl").read_text().splitlines()
+        if ln.strip() and json.loads(ln)["suite"] == "helpfulness_fixture"
+    )
+    for p in (cache / "generations").rglob(f"{ch.split(':', 1)[1]}.json"):
+        p.unlink()
+
+    dropped = suite_metrics(run_dir, cfg, "helpfulness_fixture", data_dir=FIX, cache_dir=cache)
+    assert _metric(dropped, "benign_helpfulness").extra["answer_rate"] < 1.0  # not answered
