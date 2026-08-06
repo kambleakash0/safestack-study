@@ -364,7 +364,9 @@ tripwire reference.
 
 1. **Tripwire (mode-collapse gate), pinned constant 0.10.** Reject any checkpoint whose dev-helpfulness
    **answer-rate** is more than **0.10 (absolute, 10 percentage points)** below the base model's:
-   `answer_rate < base_answer_rate - 0.10` → rejected. The signal is the **answer-rate** (the fraction of
+   `answer_rate < base_answer_rate - 0.10` → rejected (0.10 is a *tolerance*, so a drop of exactly 0.10
+   is within tolerance and survives; the comparison is rounded to the pipeline's 6-digit precision so
+   the exact boundary is not lost to floating-point error). The signal is the **answer-rate** (the fraction of
    plainly-benign dev prompts the model still answers, from the deterministic `is_refusal` heuristic),
    **not** the 1-5 Mistral quality score, because (a) a mode-collapse gate must be robust and this study's
    own load-bearing threat is the Mistral helpfulness judge's self-preference bias (Consequences,
