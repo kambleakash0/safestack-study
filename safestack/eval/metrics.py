@@ -211,7 +211,10 @@ def suite_metrics(
         _assert_paired(cfg, data_dir, required=_DEV_PAIR if is_dev else _EVAL_PAIR)
 
     rows = _collect(run_dir, cfg, suite, split, data_dir, cache_dir, models_dir)
-    role = SPLIT_TO_ROLE.get(split)
+    # Look up the role from the true split, falling back to the metric_split role, so the fail-loud
+    # guard below stays active whenever a metric branch does -- even if _DEV_TO_EVAL_SPLIT and
+    # SPLIT_TO_ROLE ever drift for a split (dev splits are currently in both, so this is defensive).
+    role = SPLIT_TO_ROLE.get(split) or SPLIT_TO_ROLE.get(metric_split)
     if role and rows and all(r["judgment"] is None for r in rows):
         # A judge-derived metric must never read as a real value when nothing was judged
         # (would report a confident ASR=0.0 -> "SWITCH" at the gate). Fail loudly instead.

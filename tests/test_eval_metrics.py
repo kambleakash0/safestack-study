@@ -286,3 +286,14 @@ def test_answer_rate_counts_missing_generation_as_not_answered(tmp_path: Path) -
 
     dropped = suite_metrics(run_dir, cfg, "helpfulness_fixture", data_dir=FIX, cache_dir=cache)
     assert _metric(dropped, "benign_helpfulness").extra["answer_rate"] < 1.0  # not answered
+
+def test_dev_report_before_judge_raises(tmp_path: Path) -> None:
+    # The fail-loud "no judgments joined" guard must protect DEV suites too: reporting before the
+    # judge pass must raise, never silently report ASR=0.0 (dev splits are in SPLIT_TO_ROLE, so role
+    # is set and the guard fires; the metric_split fallback keeps it firing even if the maps drift).
+    dst = _dev_fixture(tmp_path)
+    cfg = _dev_cfg(["dev_harmful_fixture", "dev_overrefusal_fixture", "dev_helpfulness_fixture"])
+    cache = tmp_path / "cache"
+    run_dir = run_suite(cfg, runs_dir=tmp_path / "runs", data_dir=dst, cache_dir=cache)
+    with pytest.raises(ValueError, match="no judgments joined"):  # NOTE: no judge_run
+        suite_metrics(run_dir, cfg, "dev_harmful_fixture", data_dir=dst, cache_dir=cache)
