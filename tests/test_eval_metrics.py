@@ -297,3 +297,33 @@ def test_dev_report_before_judge_raises(tmp_path: Path) -> None:
     run_dir = run_suite(cfg, runs_dir=tmp_path / "runs", data_dir=dst, cache_dir=cache)
     with pytest.raises(ValueError, match="no judgments joined"):  # NOTE: no judge_run
         suite_metrics(run_dir, cfg, "dev_harmful_fixture", data_dir=dst, cache_dir=cache)
+
+def test_dev_selection_flow_end_to_end(tmp_path: Path) -> None:
+    # FU5c glue: a mock dev eval -> real suite_metrics per dev suite -> checkpoint_dev_metrics ->
+    # select_checkpoint, proving selection consumes REAL metrics artifacts (not hand-built ones) and
+    # the committed Selection carries no raw text. This is exactly the notebook's select cell.
+    from safestack.train.select import checkpoint_dev_metrics, select_checkpoint
+
+    dst = _dev_fixture(tmp_path)
+    cfg = _dev_cfg(["dev_harmful_fixture", "dev_overrefusal_fixture", "dev_helpfulness_fixture"])
+    cache = tmp_path / "cache"
+    run_dir = run_suite(cfg, runs_dir=tmp_path / "runs", data_dir=dst, cache_dir=cache)
+    judge_run(run_dir, cfg=cfg, data_dir=dst, cache_dir=cache)
+
+    def _dm(label: str, step: int):
+        def art(suite: str):
+            return suite_metrics(run_dir, cfg, suite, data_dir=dst, cache_dir=cache)
+
+        return checkpoint_dev_metrics(
+            label, step,
+            harmful=art("dev_harmful_fixture"),
+            overrefusal=art("dev_overrefusal_fixture"),
+            helpfulness=art("dev_helpfulness_fixture"),
+        )
+
+    base = _dm("base", 0)
+    ckpt = _dm("sft_ckpt", 1)
+    sel = select_checkpoint([ckpt], base)
+    assert sel.selected_checkpoint == "sft_ckpt" and sel.n_candidates == 1
+    assert 0.0 <= sel.helpfulness_answer_rate <= 1.0 and sel.tripwire_margin == 0.10
+    assert "PLACEHOLDER" not in sel.to_json()  # aggregate-only: no raw prompt/response text

@@ -1,0 +1,24 @@
+experiment_id: dev_selection_base
+description: "Phase-3 FU5c: the frozen BASE Mistral (no adapter, no guardrails) on the held-out DEV
+  suites -- the rule-9 reference. Its dev answer-rate is the mode-collapse tripwire reference and its
+  dev ASR is the degeneracy reference (ADR-0015 amendment 1). Same suites/judges/decode as the SFT
+  dev eval, so the comparison is like-for-like. Dev only -- never a reported number (ADR-0004 rule 3)."
+condition_id: C1
+model: mistral_7b_instruct
+suites:
+  - dev_harmful_maliciousinstruct_v1   # dev_harmful      -> base ASR reference
+  - dev_overrefusal_orbench_v1         # dev_overrefusal  -> base over-refusal
+  - dev_helpfulness_alpaca_v1          # dev_helpfulness  -> base answer-rate (tripwire reference)
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+suite_role: dev
+decode:
+  max_new_tokens: 256
+  seed: 0
+judge_prompt_version: v2
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-3, base, dev-selection]
+# Colab (needs a GPU): the base half of the FU5c selection eval, run alongside dev_selection_sft.
+#   safestack eval run  -c configs/experiments/dev_selection_base.yaml --backend hf_local
