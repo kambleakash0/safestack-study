@@ -223,3 +223,33 @@ def test_train_cli_mounted_and_torch_free():
 
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0 and "train" in result.output
+
+class _BatchEncodingTok(_FakeTok):
+    # Newer transformers return a BatchEncoding / dict from apply_chat_template(tokenize=True), so
+    # list(dict) yields the string KEYS -> Arrow "Expected bytes, got int" at Dataset.from_list.
+    # tokenize_example must normalize the dict to its input_ids (the FU5c first-run regression).
+    def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+        ids = super().apply_chat_template(messages, add_generation_prompt, tokenize)
+        return {"input_ids": ids, "attention_mask": [1] * len(ids)}
+
+
+class _BatchedListTok(_FakeTok):
+    # Some versions return a single conversation batched as [[...ids...]].
+    def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+        return [super().apply_chat_template(messages, add_generation_prompt, tokenize)]
+
+
+def test_tokenize_example_normalizes_chat_template_return_variants():
+    # A dict/BatchEncoding or a batched [[...]] return must normalize to the SAME flat list of plain
+    # python ints as the bare list[int] return -- otherwise Dataset.from_list sees strings/nested
+    # objects and raises ArrowTypeError. Regression for the FU5c first training run.
+    rec = {"example_id": "x", "messages": [
+        {"role": "system", "content": "AB"},
+        {"role": "user", "content": "CDE"},
+        {"role": "assistant", "content": "FG"},
+    ]}
+    plain = tokenize_example(rec, _FakeTok(), max_length=100)
+    for tok in (_BatchEncodingTok(), _BatchedListTok()):
+        out = tokenize_example(rec, tok, max_length=100)
+        assert out == plain  # dict / nested-list returns normalize to the same flat ids
+        assert all(type(t) is int for t in out["input_ids"])  # plain python ints -> Arrow-safe

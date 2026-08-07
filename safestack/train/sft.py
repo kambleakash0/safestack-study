@@ -23,6 +23,24 @@ from pathlib import Path
 
 from safestack.train.config import SUPPORTED_TRAIN_SCHEMA_VERSION, SFTTrainConfig
 
+
+def _flat_ids(rendered) -> list[int]:
+    """Normalize an apply_chat_template / encode return to a flat list of plain python ints.
+
+    The return type varies by transformers version: a list[int], a BatchEncoding / dict carrying
+    ``input_ids``, a nested list[list[int]] (a single conversation returned batched), or a
+    tensor / ndarray. ``list()``-ing a dict yields its string KEYS, which then reach Arrow as
+    "Expected bytes, got int" at ``Dataset.from_list``; normalizing here keeps the tokenized dataset
+    strictly int-typed. No torch import, so this stays importable in the base (no-torch) test env.
+    """
+    if isinstance(rendered, dict):  # BatchEncoding / dict
+        rendered = rendered["input_ids"]
+    if hasattr(rendered, "tolist"):  # torch.Tensor / np.ndarray -> nested python lists / ints
+        rendered = rendered.tolist()
+    if rendered and isinstance(rendered[0], (list, tuple)):  # single conversation returned batched
+        rendered = rendered[0]
+    return [int(t) for t in rendered]
+
 log = logging.getLogger("safestack")
 
 _IGNORE = -100  # HF label id excluded from the cross-entropy loss
@@ -81,12 +99,12 @@ def tokenize_example(record: dict, tokenizer, max_length: int) -> dict:
     messages = record["messages"]
     if not messages or messages[-1]["role"] != "assistant":
         raise ValueError(f"SFT record {record.get('example_id')!r} must end in an assistant turn")
-    prompt_ids = list(
+    prompt_ids = _flat_ids(
         tokenizer.apply_chat_template(messages[:-1], add_generation_prompt=True, tokenize=True)
     )
-    completion_ids = list(tokenizer.encode(messages[-1]["content"], add_special_tokens=False))
+    completion_ids = _flat_ids(tokenizer.encode(messages[-1]["content"], add_special_tokens=False))
     if tokenizer.eos_token_id is not None:
-        completion_ids.append(tokenizer.eos_token_id)  # teach the model to stop
+        completion_ids.append(int(tokenizer.eos_token_id))  # teach the model to stop
     input_ids = prompt_ids + completion_ids
     labels = mask_by_prompt_length(prompt_ids, input_ids)  # prompt is a prefix by construction
     if len(input_ids) > max_length:
