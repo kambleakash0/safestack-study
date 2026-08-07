@@ -5,6 +5,7 @@ extraction. Pure/mock; the full LoRA/QLoRA run is hf-marked, verified on Colab (
 from __future__ import annotations
 
 import json
+from collections import UserDict
 from pathlib import Path
 
 import pytest
@@ -225,12 +226,13 @@ def test_train_cli_mounted_and_torch_free():
     assert result.exit_code == 0 and "train" in result.output
 
 class _BatchEncodingTok(_FakeTok):
-    # Newer transformers return a BatchEncoding / dict from apply_chat_template(tokenize=True), so
-    # list(dict) yields the string KEYS -> Arrow "Expected bytes, got int" at Dataset.from_list.
-    # tokenize_example must normalize the dict to its input_ids (the FU5c first-run regression).
+    # Newer transformers return a BatchEncoding from apply_chat_template(tokenize=True). It is a
+    # UserDict (NOT a dict subclass), so isinstance(x, dict) misses it and list(x) yields the string
+    # KEYS -> Arrow "Expected bytes, got int" at Dataset.from_list. tokenize_example must treat any
+    # Mapping (dict OR BatchEncoding) as an input_ids container (the FU5c first-run regression).
     def apply_chat_template(self, messages, add_generation_prompt, tokenize):
         ids = super().apply_chat_template(messages, add_generation_prompt, tokenize)
-        return {"input_ids": ids, "attention_mask": [1] * len(ids)}
+        return UserDict({"input_ids": ids, "attention_mask": [1] * len(ids)})
 
 
 class _BatchedListTok(_FakeTok):

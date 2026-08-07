@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+from collections.abc import Mapping
 from pathlib import Path
 
 from safestack.train.config import SUPPORTED_TRAIN_SCHEMA_VERSION, SFTTrainConfig
@@ -33,7 +34,7 @@ def _flat_ids(rendered) -> list[int]:
     "Expected bytes, got int" at ``Dataset.from_list``; normalizing here keeps the tokenized dataset
     strictly int-typed. No torch import, so this stays importable in the base (no-torch) test env.
     """
-    if isinstance(rendered, dict):  # BatchEncoding / dict
+    if isinstance(rendered, Mapping):  # dict OR transformers BatchEncoding (a UserDict, not a dict)
         rendered = rendered["input_ids"]
     if hasattr(rendered, "tolist"):  # torch.Tensor / np.ndarray -> nested python lists / ints
         rendered = rendered.tolist()
