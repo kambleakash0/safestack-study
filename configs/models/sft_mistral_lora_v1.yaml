@@ -7,10 +7,10 @@ revision: c170c708c41dac9275d15a8fff4eca08d52bab71  # pinned SHA of Mistral-7B-I
 # The SFT LoRA adapter (ADR-0015 dec.3). PRIVATE: it lives in a private HF-Hub repo, never in the
 # public repo (adapters/ is also gitignored locally). Adjust the repo to your HF namespace.
 adapter: kambleakash0/safestack-sft-mistral-lora-v1
-# Immutable adapter pin (ADR-0015 dec.7b): set to the upload commit SHA after the first training run,
-# so C5-C8 share one immutable policy identity and a re-trained adapter is a cache miss. Null until
-# the adapter exists (FU5c trains it, then FU6 pins this + reuses the card for C5-C8).
-adapter_revision:
+# Immutable adapter pin (ADR-0015 dec.7b): the upload commit SHA from the FU5c training run, so C5-C8
+# share one immutable policy identity (all fingerprint fields match -> C6-C8 cache-hit C5) and a
+# re-trained adapter at the same repo is a cache miss.
+adapter_revision: 05266a9bd3fc1c75c515ea39ac5f7139abd77d31
 chat_template: mistral
 dtype: bfloat16          # bf16 base (not 4-bit) at inference, matching C1 for C1<->C5 comparability
 quantization:            # null: the QLoRA-trained adapter is served on the bf16 base (ADR-0015 dec.6)

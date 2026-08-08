@@ -1,0 +1,34 @@
+experiment_id: c8_sft_input_output_guardrail
+description: "C8: the SFT-aligned Mistral + Granite Guardian INPUT and OUTPUT guardrails composed (one
+  model at both stages). Same suites/judges/decode as C5; the fully-stacked rung -- aligned weights +
+  both external screens, expected lowest ASR in the H1 ordering (decision 5). Cache-hit off C5."
+condition_id: C8
+model: sft_mistral_lora_v1
+suites:
+  - harmful_advbench_v1
+  - harmful_harmbench_v1
+  - dualuse_harmbench_contextual_v1
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+guardrail_config: input_output
+input_guardrail: granite_guardian_2b   # SAME model both stages -> one gateway (ADR-0009 dec.2)
+output_guardrail: granite_guardian_2b
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256
+  seed: 0
+judge_prompt_version: v2  # v2: Llama-Guard content-parts fix (matches the C1 re-judge)
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-3, C8, sft, input-output-guardrail]
+# Colab: C8 generation is a cache-hit off C5 (guardrail_config is excluded from the content hash), so
+#        the SFT generations are reused; C8 = Granite input pre-pass + (on input-passers) Granite output
+#        screen + Llama-Guard judge (v2). An input block short-circuits the output screen; blocked_at
+#        "input" or "output" drives ASR / FNR. One Granite instance serves both stages (loaded once).
+#   safestack eval run    -c configs/experiments/c8_sft_input_output_guardrail.yaml --backend hf_local
+#   safestack eval judge  --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>
+#   safestack eval compare --metrics reports/metrics/*.json --gate
