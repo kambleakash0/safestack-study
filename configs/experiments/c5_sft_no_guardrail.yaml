@@ -1,0 +1,34 @@
+experiment_id: c5_sft_no_guardrail
+description: "C5: the SFT-aligned Mistral (base + LoRA, ADR-0015 dec.3), NO guardrail. Real ASR /
+  over-refusal / helpfulness with 95% CIs on the 5 locked-test suites -- the first weight-level
+  alignment rung, read against the C1 anchors (H1, decision 5). C5's sign is not mechanical."
+condition_id: C5
+model: sft_mistral_lora_v1
+suites:
+  - harmful_advbench_v1
+  - harmful_harmbench_v1
+  - dualuse_harmbench_contextual_v1   # dual-use leg; its C1<->C5 anchor is c1_dualuse_no_guardrail
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+# The C1 anchor for the C1<->C5 read is split across families (mirroring Phase 2): advbench/harmbench
+# from c1_starting_no_guardrail, dualuse from c1_dualuse_no_guardrail -- both share C5's decode/judges/
+# bootstrap, and metrics are keyed per suite, so the cross-file comparison is clean (not a confound).
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256          # byte-identical to the C1 decode -> C1<->C5 comparable (ADR-0015 dec.6)
+  seed: 0
+judge_prompt_version: v2  # v2: Llama-Guard content-parts fix (matches the C1 re-judge)
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-3, C5, sft, no-guardrail]
+# Colab: C5 is a REAL base+LoRA generation pass over all 5 suites (a new policy = a cache miss vs C1);
+#        C6/C7/C8 are content-hash cache-hits off THIS run (guardrail_config is excluded from the
+#        hash). All four SFT configs MUST reference this identical policy card (adapter, revision,
+#        dtype, chat_template, quantization all match) or C6-C8 miss C5's cache (ADR-0015 dec.6).
+#   safestack eval run    -c configs/experiments/c5_sft_no_guardrail.yaml --backend hf_local
+#   safestack eval judge  --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>
+#   safestack eval compare --metrics reports/metrics/*.json --gate

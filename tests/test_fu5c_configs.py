@@ -19,7 +19,8 @@ def test_sft_policy_card_wires_base_plus_adapter():
     # Frozen base identical to the C1 Mistral card, so the only difference is the LoRA adapter.
     assert spec.checkpoint == base.checkpoint and spec.revision == base.revision
     assert spec.adapter and spec.adapter != base.adapter  # base carries no adapter
-    assert spec.adapter_revision is None  # pinned to the upload commit SHA post-run (FU6)
+    # Pinned to the FU5c upload commit SHA (ADR-0015 dec.7b) so C5-C8 share one immutable identity.
+    assert spec.adapter_revision == "05266a9bd3fc1c75c515ea39ac5f7139abd77d31"
     assert spec.dtype == "bfloat16" and spec.quantization is None  # bf16 base, C1<->C5 comparable
     assert spec.chat_template == "mistral"
 
