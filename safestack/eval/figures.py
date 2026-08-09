@@ -277,6 +277,10 @@ _CSS = """
 .chart .tick { fill:var(--muted); font-size:11px; }
 .chart .ci { stroke:var(--text); stroke-width:1.5; opacity:.65; }
 .chart .val { fill:var(--muted); font-size:11px; }
+.chart .front { fill:none; stroke:var(--muted); stroke-width:1.5; stroke-dasharray:4 3; }
+.chart .dotlab { fill:var(--muted); font-size:10px; }
+.chart .axtitle { fill:var(--muted); font-size:11px; }
+.dot.s0 { fill:var(--s0); } .dot.s1 { fill:var(--s1); }
 .bar.s0 { fill:var(--s0); } .bar.s1 { fill:var(--s1); } .bar.s2 { fill:var(--s2); }
 .legend { display:flex; gap:16px; margin:6px 0 0; color:var(--muted); font-size:12px; }
 .chip { display:inline-flex; align-items:center; gap:6px; }
@@ -302,6 +306,9 @@ def build_dashboard_html(rows: list[AblationRow]) -> str:
         conds, [("over-refusal", 0, orr)], y_max=orr_top, y_ticks=[0, orr_top / 2, orr_top],
         value_labels=True,  # 8-bar single series: direct labels are legible (unlike the 24-bar ASR)
     )
+    pts = pareto_points(rows)
+    pareto_svg = _svg_scatter(pts, pareto_frontier(pts))
+    pareto_legend = _legend([("SFT", 0), ("Starting", 1)])
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -315,11 +322,152 @@ def build_dashboard_html(rows: list[AblationRow]) -> str:
         f"<div class='panel'>{asr_svg}{legend}</div>"
         "<h2>Model over-refusal by condition (benign XSTest)</h2>"
         f"<div class='panel'>{orr_svg}</div>"
+        "<h2>Safety vs benign-refusal cost (Pareto)</h2>"
+        "<p class='note'>Safety = 1 &minus; mean ASR over the three harmful/dual-use suites "
+        "(exploratory aggregate). Points below/right of the frontier are dominated.</p>"
+        f"<div class='panel'>{pareto_svg}{pareto_legend}</div>"
         "<h2>Core ablation table</h2>"
         f"<div class='panel scroll'>{_html_table(rows)}</div>"
         "</div></body></html>"
     )
 
+
+# --------------------------------------------------------------------------------------------------
+# Safety vs benign-cost Pareto (master-plan plot #3). The master plan names a "safety/helpfulness"
+# Pareto, but helpfulness is flat + block-blind here (4.915->4.910, ADR-0016), so the informative
+# cost axis is the guardrail's benign-block rate (guardrail FPR; 0 on the no-guardrail conditions).
+# Safety is 1 - mean ASR over the three harmful/dual-use suites -- an EXPLORATORY aggregate,
+# not a confirmatory per-suite claim (ADR-0016 keeps per-suite ASR the confirmatory unit).
+# --------------------------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ParetoPoint:
+    condition: str
+    policy: str
+    cost: float  # guardrail FPR (benign-block rate); 0.0 on a no-guardrail condition
+    safety: float  # 1 - mean ASR
+    mean_asr: float
+
+
+def pareto_points(rows: list[AblationRow]) -> list[ParetoPoint]:
+    pts: list[ParetoPoint] = []
+    for r in rows:
+        asrs = [
+            r.cells[h].point
+            for _, _, h in MATRIX_COLUMNS
+            if h.startswith("ASR") and r.cells.get(h) is not None
+        ]
+        mean_asr = sum(asrs) / len(asrs) if asrs else 0.0
+        fpr = r.cells.get("Guardrail FPR")
+        cost = fpr.point if fpr is not None else 0.0  # N/A guardrail FPR -> no benign-block cost
+        pts.append(ParetoPoint(r.condition, r.policy, cost, 1.0 - mean_asr, mean_asr))
+    return pts
+
+
+def pareto_frontier(points: list[ParetoPoint]) -> list[ParetoPoint]:
+    """The non-dominated set (maximise safety, minimise cost), sorted by cost. A point survives
+    unless another has cost <= and safety >=, strictly better on one axis (exact ties both stay)."""
+    front = [
+        p
+        for p in points
+        if not any(
+            q is not p
+            and q.cost <= p.cost
+            and q.safety >= p.safety
+            and (q.cost < p.cost or q.safety > p.safety)
+            for q in points
+        )
+    ]
+    return sorted(front, key=lambda p: (p.cost, -p.safety))
+
+
+def plot_pareto(
+    rows: list[AblationRow], out_base: str | Path, *, formats: tuple[str, ...] = ("svg", "png")
+) -> list[Path]:
+    plt = _pyplot()
+    pts = pareto_points(rows)
+    fig, ax = plt.subplots(figsize=(7.2, 5.0))
+    for policy, hue in (("Starting", PALETTE[1][0]), ("SFT", PALETTE[0][0])):
+        ps = [p for p in pts if p.policy == policy]
+        ax.scatter(
+            [p.cost for p in ps], [p.safety for p in ps], s=64, color=hue, label=policy, zorder=3
+        )
+        for p in ps:
+            ax.annotate(
+                p.condition, (p.cost, p.safety), textcoords="offset points",
+                xytext=(5, 4), fontsize=8,
+            )
+    front = pareto_frontier(pts)
+    ax.plot(
+        [p.cost for p in front], [p.safety for p in front],
+        color=_ERRBAR, lw=1.2, ls="--", zorder=2, label="Pareto frontier",
+    )
+    ax.set_xlabel("Benign-refusal cost (guardrail FPR; 0 = no guardrail)")
+    ax.set_ylabel("Safety = 1 - mean ASR (advbench / harmbench / dual-use)")
+    ax.set_title("Safety vs benign-refusal cost (C1-C8)")
+    ax.legend(frameon=False)
+    ax.spines[["top", "right"]].set_visible(False)
+    return _save(fig, Path(out_base), formats)
+
+
+_POLICY_SLOT = {"SFT": 0, "Starting": 1}  # dashboard scatter hue by policy
+
+
+def _svg_scatter(points: list[ParetoPoint], frontier: list[ParetoPoint], width: int = 560,
+                 height: int = 340) -> str:
+    """The Pareto as a theme-aware inline-SVG scatter (dots coloured by policy, dashed frontier)."""
+    m = {"l": 54, "r": 14, "t": 12, "b": 40}
+    pw, ph = width - m["l"] - m["r"], height - m["t"] - m["b"]
+    x0, y0 = m["l"], m["t"]
+    x_max = 0.4
+    y_min, y_max = 0.3, 1.0
+    # Fail loud on a point outside the fixed window rather than silently clamping it onto an axis
+    # (which would mis-place it vs the correctly-computed frontier). Widen the bounds when it fires.
+    for p in points:
+        if not (0.0 <= p.cost <= x_max and y_min <= p.safety <= y_max):
+            raise ValueError(
+                f"Pareto point {p.condition} (cost={p.cost:.3f}, safety={p.safety:.3f}) is outside "
+                f"the [0,{x_max}] x [{y_min},{y_max}] window; widen _svg_scatter's bounds."
+            )
+
+    def sx(v: float) -> float:
+        return x0 + pw * (v / x_max)
+
+    def sy(v: float) -> float:
+        return y0 + ph * (1 - (v - y_min) / (y_max - y_min))
+
+    parts = [f'<svg viewBox="0 0 {width} {height}" role="img" class="chart" '
+             'preserveAspectRatio="xMidYMid meet">']
+    for t in (0.3, 0.5, 0.7, 0.9):
+        gy = sy(t)
+        parts.append(f'<line class="grid" x1="{x0}" y1="{gy:.1f}" x2="{x0 + pw}" y2="{gy:.1f}"/>')
+        parts.append(
+            f'<text class="tick" x="{x0 - 6}" y="{gy + 3:.1f}" text-anchor="end">{t:g}</text>'
+        )
+    for t in (0.0, 0.1, 0.2, 0.3, 0.4):
+        parts.append(
+            f'<text class="tick" x="{sx(t):.1f}" y="{y0 + ph + 16}" '
+            f'text-anchor="middle">{t:g}</text>'
+        )
+    if len(frontier) > 1:
+        d = " ".join(f"{sx(p.cost):.1f},{sy(p.safety):.1f}" for p in frontier)
+        parts.append(f'<polyline class="front" points="{d}"/>')
+    for p in points:
+        cx, cy = sx(p.cost), sy(p.safety)
+        tip = html.escape(f"{p.condition} ({p.policy}): safety {p.safety:.3f}, cost {p.cost:.3f}")
+        parts.append(
+            f'<circle class="dot s{_POLICY_SLOT[p.policy]}" cx="{cx:.1f}" cy="{cy:.1f}" r="5">'
+            f"<title>{tip}</title></circle>"
+        )
+        parts.append(
+            f'<text class="dotlab" x="{cx + 7:.1f}" y="{cy - 5:.1f}">'
+            f"{html.escape(p.condition)}</text>"
+        )
+    parts.append(
+        f'<text class="axtitle" x="{x0 + pw / 2:.1f}" y="{height - 6}" text-anchor="middle">'
+        "benign-refusal cost (guardrail FPR; 0 = none)</text>"
+    )
+    parts.append("</svg>")
+    return "".join(parts)
 
 def write_figures(
     rows: list[AblationRow],
@@ -340,6 +488,7 @@ def write_figures(
         written += plot_over_refusal_by_condition(
             rows, figures_dir / "over_refusal_by_condition", formats=formats
         )
+        written += plot_pareto(rows, figures_dir / "safety_cost_pareto", formats=formats)
     if dashboard is not None:
         dpath = Path(dashboard)
         dpath.parent.mkdir(parents=True, exist_ok=True)

@@ -180,3 +180,80 @@ def write_ablation(
 
 def ablation_from_paths(paths: list[str | Path]) -> list[AblationRow]:
     return ablation_rows(load_artifacts(paths))
+
+
+# --------------------------------------------------------------------------------------------------
+# SFT before/after table (master-plan table #3): Starting (C1-C4) vs SFT (C5-C8), per guardrail.
+# --------------------------------------------------------------------------------------------------
+# (guardrail config, Starting condition, SFT condition) -- the four (base, aligned) pairs.
+BEFORE_AFTER_PAIRS = [
+    ("none", "C1", "C5"),
+    ("input", "C2", "C6"),
+    ("output", "C3", "C7"),
+    ("input+output", "C4", "C8"),
+]
+_BA_HEADERS = ["Guardrail", "Metric", "Starting", "SFT", "delta (SFT-Starting)"]
+
+
+@dataclass(frozen=True)
+class BeforeAfterRow:
+    guardrail: str
+    metric: str  # a MATRIX_COLUMNS header, e.g. "ASR advbench"
+    starting: Cell | None
+    sft: Cell | None
+    delta: float | None  # sft.point - starting.point, or None if either side is N/A
+
+
+def before_after_rows(rows: list[AblationRow]) -> list[BeforeAfterRow]:
+    """Reshape into the SFT before/after view: for each guardrail config and each metric column, the
+    Starting cell, the SFT cell, and the SFT delta. A pair with a missing side is
+    skipped; a metric that is N/A on either side (guardrail FPR on the no-guardrail pair) carries a
+    None delta."""
+    by_cond = {r.condition: r for r in rows}
+    out: list[BeforeAfterRow] = []
+    for guardrail, start_c, sft_c in BEFORE_AFTER_PAIRS:
+        start_row, sft_row = by_cond.get(start_c), by_cond.get(sft_c)
+        if start_row is None or sft_row is None:
+            continue
+        for _, _, header in MATRIX_COLUMNS:
+            s, f = start_row.cells.get(header), sft_row.cells.get(header)
+            delta = (f.point - s.point) if (s is not None and f is not None) else None
+            out.append(BeforeAfterRow(guardrail, header, s, f, delta))
+    return out
+
+
+def render_before_after(rows: list[BeforeAfterRow], fmt: str) -> str:
+    body: list[list[str]] = []
+    for r in rows:
+        body.append([
+            r.guardrail,
+            r.metric,
+            r.starting.fmt() if r.starting is not None else NA_CELL,
+            r.sft.fmt() if r.sft is not None else NA_CELL,
+            f"{r.delta:+.3f}" if r.delta is not None else NA_CELL,
+        ])
+    if fmt == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        writer.writerow(_BA_HEADERS)
+        writer.writerows(body)
+        return buf.getvalue()
+    if fmt == "md":
+        head = "| " + " | ".join(_BA_HEADERS) + " |"
+        sep = "| " + " | ".join("---" for _ in _BA_HEADERS) + " |"
+        lines = ["| " + " | ".join(row) + " |" for row in body]
+        return "\n".join([head, sep, *lines]) + "\n"
+    raise ValueError(f"unknown format {fmt!r} (use 'md' or 'csv')")
+
+
+def write_before_after(
+    rows: list[BeforeAfterRow], out_base: str | Path, *, formats: tuple[str, ...] = ("csv", "md")
+) -> list[Path]:
+    base = Path(out_base)
+    base.parent.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for fmt in formats:
+        path = base.with_suffix(f".{fmt}")
+        path.write_text(render_before_after(rows, fmt), encoding="utf-8")
+        written.append(path)
+    return written
