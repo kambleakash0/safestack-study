@@ -148,6 +148,16 @@ def test_pareto_points_cost_and_safety():
     assert pts["C2"].cost == 0.33
 
 
+def test_pareto_points_require_all_three_asr_suites():
+    from safestack.eval.ablation import MATRIX_COLUMNS, AblationRow, Cell
+
+    cells = {h: Cell(0.1, 0.1, 0.1, 100) for _, _, h in MATRIX_COLUMNS if h.startswith("ASR")}
+    del cells["ASR dual-use"]  # a condition missing one harmful suite must not average silently
+    row = AblationRow("C1", "Starting", "none", cells)
+    with pytest.raises(ValueError, match="missing ASR"):
+        pareto_points([row])
+
+
 def test_pareto_frontier_keeps_only_non_dominated():
     pts = [
         ParetoPoint("A", "x", cost=0.0, safety=0.90, mean_asr=0.10),  # cheap+good -> frontier
