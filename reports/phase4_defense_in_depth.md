@@ -34,8 +34,9 @@ cost — and buys *nothing* separable on the dual-use case defense-in-depth was 
 
 **Leg 1, the load-bearing test — SFT alignment alone (`C1` → `C5`).** This is the one comparison
 whose sign is not mechanically enforced (C5 is a fresh generation, not a cache-hit off C1), and it
-lands decisively in the safe direction on every suite, CIs non-overlapping — the ADR-0015 decision-5
-**SUPPORT** verdict (a real safety gain with no separable over-refusal or helpfulness cost):
+lands decisively in the safe direction on every suite, CIs non-overlapping — the **SUPPORT** verdict
+of the ADR-0015 decision-5 rule, as recorded in ADR-0016 (a real safety gain with no separable
+over-refusal or helpfulness cost):
 
 | ASR (point) | advbench | harmbench | dual-use |
 |---|---|---|---|
