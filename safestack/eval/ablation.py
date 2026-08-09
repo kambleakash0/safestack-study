@@ -54,6 +54,9 @@ MATRIX_COLUMNS: list[tuple[str, str, str]] = [
 _GUARDRAIL_METRICS = frozenset({"guardrail_fpr", "guardrail_fnr"})
 _LABEL_HEADERS = ["Condition", "Policy", "Guardrail"]
 
+# The single N/A placeholder, shared with the dashboard's HTML table so both committed tables agree.
+NA_CELL = "--"
+
 
 @dataclass(frozen=True)
 class Cell:
@@ -133,7 +136,7 @@ def _table(rows: list[AblationRow]) -> tuple[list[str], list[list[str]]]:
     body: list[list[str]] = []
     for r in rows:
         cells = [
-            r.cells[h].fmt() if r.cells.get(h) is not None else "--"
+            r.cells[h].fmt() if r.cells.get(h) is not None else NA_CELL
             for _, _, h in MATRIX_COLUMNS
         ]
         body.append([r.condition, r.policy, r.guardrail, *cells])
