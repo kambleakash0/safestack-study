@@ -141,7 +141,8 @@ def plot_over_refusal_by_condition(
     lo = [(b.point - b.lo) if b else 0.0 for b in bars]
     hi = [(b.hi - b.point) if b else 0.0 for b in bars]
     fig, ax = plt.subplots(figsize=(9.0, 4.0))
-    ax.bar(xs, pts, 0.6, yerr=[lo, hi], capsize=3, ecolor=_ERRBAR, color=PALETTE[0][0])
+    container = ax.bar(xs, pts, 0.6, yerr=[lo, hi], capsize=3, ecolor=_ERRBAR, color=PALETTE[0][0])
+    ax.bar_label(container, labels=[f"{p:.3f}" for p in pts], padding=6, fontsize=8)
     ax.set_xticks(xs)
     ax.set_xticklabels(conds)
     ax.set_ylabel("Over-refusal (benign XSTest)")
@@ -164,10 +165,15 @@ def _svg_bar_chart(
     y_ticks: list[float],
     width: int = 720,
     height: int = 300,
+    value_labels: bool = False,
 ) -> str:
     """A grouped bar chart as an inline SVG. ``groups`` = [(label, hue slot, [Bar|None per cond])].
     Colours come from CSS vars (``--s0..2``) so the page theme controls them; bars carry a native
-    <title> for hover. Whiskers draw the 95% CI. N/A bars (None) are skipped, not drawn as zero."""
+    <title> for hover. Whiskers draw the 95% CI. N/A bars (None) are skipped, not drawn as zero.
+    ``value_labels`` prints the point above each bar -- use it only for a low-count single-series
+    chart (dataviz: never a number on every point, so it is off for the 24-bar ASR grid). All
+    interpolated text (condition labels, hover) is HTML-escaped so a crafted metrics artifact cannot
+    inject markup into the self-contained page."""
     pw = width - _MARGIN["l"] - _MARGIN["r"]
     ph = height - _MARGIN["t"] - _MARGIN["b"]
     x0, y0 = _MARGIN["l"], _MARGIN["t"]
@@ -203,21 +209,27 @@ def _svg_bar_chart(
             if b is None:
                 continue
             top = sy(b.point)
-            base = sy(0)
-            bh = max(0.0, base - top)
+            cx = bx + bw / 2
+            bh = max(0.0, sy(0) - top)
             tip = html.escape(f"{cond} {label}: {b.point:.3f} [{b.lo:.3f}, {b.hi:.3f}]")
             parts.append(
                 f'<rect class="bar s{slot}" x="{bx:.1f}" y="{top:.1f}" width="{bw:.1f}" '
                 f'height="{bh:.1f}" rx="2"><title>{tip}</title></rect>'
             )
             if b.hi > b.lo:  # CI whisker
-                cx = bx + bw / 2
                 parts.append(
                     f'<line class="ci" x1="{cx:.1f}" y1="{sy(b.hi):.1f}" x2="{cx:.1f}" '
                     f'y2="{sy(b.lo):.1f}"/>'
                 )
+            if value_labels:
+                ly = (sy(b.hi) if b.hi > b.lo else top) - 4
+                parts.append(
+                    f'<text class="val" x="{cx:.1f}" y="{ly:.1f}" text-anchor="middle">'
+                    f"{b.point:.3f}</text>"
+                )
         parts.append(
-            f'<text class="tick" x="{gx:.1f}" y="{y0 + ph + 16}" text-anchor="middle">{cond}</text>'
+            f'<text class="tick" x="{gx:.1f}" y="{y0 + ph + 16}" text-anchor="middle">'
+            f"{html.escape(cond)}</text>"
         )
     parts.append("</svg>")
     return "".join(parts)
@@ -264,6 +276,7 @@ _CSS = """
 .chart .axis { stroke:var(--axis); stroke-width:1.5; }
 .chart .tick { fill:var(--muted); font-size:11px; }
 .chart .ci { stroke:var(--text); stroke-width:1.5; opacity:.65; }
+.chart .val { fill:var(--muted); font-size:11px; }
 .bar.s0 { fill:var(--s0); } .bar.s1 { fill:var(--s1); } .bar.s2 { fill:var(--s2); }
 .legend { display:flex; gap:16px; margin:6px 0 0; color:var(--muted); font-size:12px; }
 .chip { display:inline-flex; align-items:center; gap:6px; }
@@ -286,7 +299,8 @@ def build_dashboard_html(rows: list[AblationRow]) -> str:
     orr_max = max([b.hi for b in orr if b] + [0.06])
     orr_top = round(orr_max + 0.01, 2)
     orr_svg = _svg_bar_chart(
-        conds, [("over-refusal", 0, orr)], y_max=orr_top, y_ticks=[0, orr_top / 2, orr_top]
+        conds, [("over-refusal", 0, orr)], y_max=orr_top, y_ticks=[0, orr_top / 2, orr_top],
+        value_labels=True,  # 8-bar single series: direct labels are legible (unlike the 24-bar ASR)
     )
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"

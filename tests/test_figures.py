@@ -119,6 +119,22 @@ def test_asr_suites_carry_fixed_hue_slots():
         assert asr_svg.count(f'class="bar s{slot}"') == 8
 
 
+def test_overrefusal_chart_has_direct_value_labels_asr_does_not():
+    h = build_dashboard_html(_rows())
+    asr_svg, orr_svg = re.findall(r"<svg.*?</svg>", h, re.S)
+    assert asr_svg.count('class="val"') == 0  # dataviz: no number on every one of 24 bars
+    assert orr_svg.count('class="val"') == 8  # legible on the 8-bar single series
+
+
+def test_condition_labels_are_html_escaped_in_svg():
+    # A crafted condition must not inject markup into the self-contained dashboard.
+    evil = "C1</text><script>alert(1)</script>"
+    row = _row(evil, "Starting", "none", asr=0.4, na_fpr=True)
+    h = build_dashboard_html([row])
+    assert "<script>alert(1)</script>" not in h
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in h
+
+
 def test_matplotlib_figures_written(tmp_path):
     pytest.importorskip("matplotlib")
     paths = write_figures(_rows(), figures_dir=tmp_path / "figures", dashboard=None)
