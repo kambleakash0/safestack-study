@@ -84,6 +84,14 @@ def test_dashboard_is_self_contained_themed_and_parseable():
         minidom.parseString(svg)
 
 
+def test_dashboard_has_inline_self_contained_theme_toggle():
+    h = build_dashboard_html(_rows())
+    assert "id='themeBtn'" in h and "class='tglbtn'" in h  # the toggle button
+    assert "<script>" in h and "setAttribute('data-theme'" in h  # flips the theme attribute
+    # the toggle is inline + self-contained: no external script/fetch/network reference
+    assert "src=" not in h and "fetch(" not in h and "http" not in h
+
+
 def test_dashboard_svg_bars_stay_within_the_viewbox():
     h = build_dashboard_html(_rows())
     svg = re.findall(r"<svg[^>]*viewBox=\"0 0 (\d+) (\d+)\".*?</svg>", h, re.S)
@@ -198,6 +206,48 @@ def test_pareto_panel_in_dashboard_has_a_dot_per_condition():
     h = build_dashboard_html(_rows())
     pareto_svg = re.findall(r"<svg.*?</svg>", h, re.S)[2]
     assert pareto_svg.count('<circle class="dot') == 8  # one per condition
+
+
+def _harmbench_grid():
+    from safestack.eval.artifacts import MetricResult, MetricsArtifact, SegmentResult
+    from safestack.eval.segments import segment_asr_grid
+
+    arts = [
+        MetricsArtifact(
+            experiment_id=f"e{c}", condition_id=c, suite="harmful_harmbench_v1", split="eval",
+            policy_model_id="m", n=100,
+            metrics=[MetricResult(name="asr", point=0.1, ci_low=0.1, ci_high=0.1, n=100)],
+            segments=[SegmentResult(metric="asr", segment="cyber", point=v, ci_low=v, ci_high=v,
+                                    n=10)],
+        )
+        for c, v in (("C1", 0.9), ("C5", 0.1))
+    ]
+    return segment_asr_grid(arts)
+
+
+def test_heat_color_is_monotone_light_to_dark():
+    from safestack.eval.figures import _heat_color
+
+    def lum(hx):
+        return sum(int(hx[i:i + 2], 16) for i in (1, 3, 5))
+
+    assert lum(_heat_color(0.0)) > lum(_heat_color(1.0))  # ASR 0 = light, ASR 1 = dark
+
+
+def test_dashboard_heatmap_appears_only_with_grid():
+    assert build_dashboard_html(_rows()).count('class="heat"') == 0  # no grid -> no heatmap
+    h = build_dashboard_html(_rows(), _harmbench_grid())
+    assert h.count('class="heat"') == 1  # one categorised suite
+    assert h.count("<rect x=") == 2  # 1 category x 2 conditions (C1, C5)
+
+
+def test_plot_segment_heatmap_written(tmp_path):
+    pytest.importorskip("matplotlib")
+    from safestack.eval.figures import plot_segment_heatmap
+
+    paths = plot_segment_heatmap(_harmbench_grid(), tmp_path / "segment_asr_heatmap")
+    assert {p.suffix for p in paths} == {".svg", ".png"}
+    assert all(p.stat().st_size > 0 for p in paths)
 
 
 def test_matplotlib_figures_written(tmp_path):

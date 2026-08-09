@@ -22,11 +22,14 @@ from pathlib import Path
 
 from safestack.eval.ablation import (
     _LABEL_HEADERS,
+    CONDITION_ORDER,
     MATRIX_COLUMNS,
     NA_CELL,
     AblationRow,
-    ablation_from_paths,
+    ablation_rows,
 )
+from safestack.eval.report import load_artifacts
+from safestack.eval.segments import SegmentGrid, segment_asr_grid
 
 # The three harmful/dual-use ASR suites grouped in the ASR chart: (matrix header, short label, hue).
 ASR_SUITES: list[tuple[str, str, int]] = [
@@ -262,7 +265,12 @@ _CSS = """
 .viz { --surface:#fcfcfb; --panel:#ffffff; --text:#0b0b0b; --muted:#52514e; --grid:#e6e5e1;
   --axis:#a9a8a2; --s0:#2a78d6; --s1:#eb6834; --s2:#1baf7a;
   font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-  color:var(--text); background:var(--surface); padding:24px; max-width:840px; margin:0 auto; }
+  color:var(--text); background:var(--surface); padding:24px; max-width:1100px; margin:0 auto;
+  position:relative; }
+.tglbtn { position:absolute; top:22px; right:24px; background:var(--panel); color:var(--muted);
+  border:1px solid var(--grid); border-radius:8px; padding:5px 11px; font:inherit; font-size:12px;
+  cursor:pointer; }
+.tglbtn:hover { color:var(--text); }
 @media (prefers-color-scheme: dark) { .viz:where(:not([data-theme=light])) {
   --surface:#1a1a19; --panel:#232320; --text:#ffffff; --muted:#c3c2b7; --grid:#33322e;
   --axis:#6f6e68; --s0:#3987e5; --s1:#d95926; --s2:#199e70; } }
@@ -281,6 +289,10 @@ _CSS = """
 .chart .dotlab { fill:var(--muted); font-size:10px; }
 .chart .axtitle { fill:var(--muted); font-size:11px; }
 .dot.s0 { fill:var(--s0); } .dot.s1 { fill:var(--s1); }
+.heat { width:100%; height:auto; display:block; }
+.heat .tick { fill:var(--muted); font-size:11px; }
+.heat .hlab { fill:var(--muted); font-size:10px; }
+.heat .hval { font-size:9px; }
 .bar.s0 { fill:var(--s0); } .bar.s1 { fill:var(--s1); } .bar.s2 { fill:var(--s2); }
 .legend { display:flex; gap:16px; margin:6px 0 0; color:var(--muted); font-size:12px; }
 .chip { display:inline-flex; align-items:center; gap:6px; }
@@ -292,8 +304,104 @@ th { color:var(--muted); font-weight:600; } .scroll { overflow-x:auto; }
 """
 
 
-def build_dashboard_html(rows: list[AblationRow]) -> str:
-    """The self-contained dashboard as an HTML string (theme-aware, aggregate-only)."""
+# --------------------------------------------------------------------------------------------------
+# Segment-level ASR heatmap (master-plan plot #6). Per-category ASR for the two categorised suites
+# (harmbench, dual-use). EXPLORATORY: tiny-n categories, supporting texture only (ADR-0016).
+# A sequential single-hue ramp (light -> dark orange, dataviz: magnitude = one hue, monotone light).
+# --------------------------------------------------------------------------------------------------
+_HEAT_LO = (255, 245, 235)  # ASR 0
+_HEAT_HI = (127, 39, 4)  # ASR 1
+
+
+def _heat_color(v: float) -> str:
+    v = max(0.0, min(1.0, v))
+    r, g, b = (round(lo + (hi - lo) * v) for lo, hi in zip(_HEAT_LO, _HEAT_HI, strict=True))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _heat_conditions(cats: dict[str, dict[str, object]]) -> list[str]:
+    present = {c for by in cats.values() for c in by}
+    return [c for c in CONDITION_ORDER if c in present]
+
+
+def _svg_heatmap(suite_label: str, cats: dict) -> str:
+    """One suite's category x condition ASR heatmap as an inline SVG (cells coloured by the ramp,
+    value printed, dark text on light cells and vice-versa). Row = category, column = condition."""
+    categories = sorted(cats)
+    conditions = _heat_conditions(cats)
+    lab_w, top_h, cw, ch = 160, 22, 40, 24
+    width = lab_w + len(conditions) * cw + 8
+    height = top_h + len(categories) * ch + 6
+    parts = [
+        f'<svg viewBox="0 0 {width} {height}" role="img" class="heat" '
+        'preserveAspectRatio="xMidYMid meet">'
+    ]
+    for ci, cond in enumerate(conditions):
+        cx = lab_w + ci * cw + cw / 2
+        parts.append(
+            f'<text class="tick" x="{cx:.1f}" y="{top_h - 7}" text-anchor="middle">'
+            f"{html.escape(cond)}</text>"
+        )
+    for ri, cat in enumerate(categories):
+        y = top_h + ri * ch
+        parts.append(
+            f'<text class="hlab" x="{lab_w - 6}" y="{y + ch / 2 + 3:.1f}" text-anchor="end">'
+            f"{html.escape(cat)}</text>"
+        )
+        for ci, cond in enumerate(conditions):
+            cell = cats[cat].get(cond)
+            x = lab_w + ci * cw
+            if cell is None:
+                continue
+            fill = _heat_color(cell.point)
+            txt = "#ffffff" if cell.point > 0.55 else "#3a2a1e"
+            tip = html.escape(f"{suite_label} / {cat} @ {cond}: ASR {cell.point:.3f} (n={cell.n})")
+            parts.append(
+                f'<rect x="{x:.1f}" y="{y}" width="{cw - 2}" height="{ch - 2}" rx="2" '
+                f'fill="{fill}"><title>{tip}</title></rect>'
+            )
+            parts.append(
+                f'<text class="hval" x="{x + cw / 2 - 1:.1f}" y="{y + ch / 2 + 3:.1f}" '
+                f'text-anchor="middle" fill="{txt}">{cell.point:.2f}</text>'
+            )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def plot_segment_heatmap(
+    grid: SegmentGrid, out_base: str | Path, *, formats: tuple[str, ...] = ("svg", "png")
+) -> list[Path]:
+    plt = _pyplot()
+    labels = [lbl for lbl in ("harmbench", "dual-use") if lbl in grid]
+    fig, axes = plt.subplots(1, len(labels), figsize=(5.6 * len(labels), 4.4), squeeze=False)
+    for ax, label in zip(axes[0], labels, strict=True):
+        cats = grid[label]
+        categories = sorted(cats)
+        conditions = _heat_conditions(cats)
+        mat = []
+        for cat in categories:
+            row = []
+            for cond in conditions:
+                cell = cats[cat].get(cond)
+                row.append(cell.point if cell is not None else float("nan"))
+            mat.append(row)
+        im = ax.imshow(mat, cmap="Oranges", vmin=0.0, vmax=1.0, aspect="auto")
+        ax.set_xticks(range(len(conditions)), conditions)
+        ax.set_yticks(range(len(categories)), categories)
+        ax.set_title(f"{label} ASR by category")
+        for i, row in enumerate(mat):
+            for j, v in enumerate(row):
+                if v == v:  # not NaN
+                    ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=7,
+                            color="white" if v > 0.55 else "#3a2a1e")
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="ASR")
+    fig.suptitle("Segment-level ASR (exploratory; tiny per-category n)")
+    fig.tight_layout()
+    return _save(fig, Path(out_base), formats)
+
+def build_dashboard_html(rows: list[AblationRow], grid: SegmentGrid | None = None) -> str:
+    """The self-contained dashboard as an HTML string (theme-aware, aggregate-only). When ``grid``
+    is given, an exploratory per-category ASR heatmap panel is appended."""
     asr = asr_series(rows)
     conds = [r.condition for r in rows]
     asr_groups = [(short, slot, asr[header]) for header, short, slot in ASR_SUITES]
@@ -309,12 +417,26 @@ def build_dashboard_html(rows: list[AblationRow]) -> str:
     pts = pareto_points(rows)
     pareto_svg = _svg_scatter(pts, pareto_frontier(pts))
     pareto_legend = _legend([("SFT", 0), ("Starting", 1)])
+    heat_section = ""
+    if grid:
+        heats = "".join(
+            f"<div class='panel scroll'>{_svg_heatmap(lbl, grid[lbl])}</div>"
+            for lbl in ("harmbench", "dual-use") if lbl in grid
+        )
+        heat_section = (
+            "<h2>Per-category ASR heatmap (exploratory)</h2>"
+            "<p class='note'>HarmBench semantic categories; tiny per-category n (1&ndash;58) with "
+            "degenerate CIs &mdash; supporting texture, not a confirmatory per-category claim.</p>"
+            + heats
+        )
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<title>SafeStack — defense-in-depth (C1-C8)</title>"
         f"<style>{_CSS}</style></head><body>"
         "<div class='viz'>"
+        "<button class='tglbtn' id='themeBtn' type='button' aria-label='Toggle light/dark'>"
+        "&#9680; theme</button>"
         "<h1>SafeStack — defense-in-depth ablation (C1-C8)</h1>"
         "<p class='note'>Aggregate-only. 2 policies (Starting / SFT) &times; 4 guardrail configs. "
         "ASR = judge-unsafe &amp; not blocked; error bars are 95% bootstrap CIs.</p>"
@@ -326,9 +448,17 @@ def build_dashboard_html(rows: list[AblationRow]) -> str:
         "<p class='note'>Safety = 1 &minus; mean ASR over the three harmful/dual-use suites "
         "(exploratory aggregate). Points below/right of the frontier are dominated.</p>"
         f"<div class='panel'>{pareto_svg}{pareto_legend}</div>"
+        f"{heat_section}"
         "<h2>Core ablation table</h2>"
         f"<div class='panel scroll'>{_html_table(rows)}</div>"
-        "</div></body></html>"
+        "</div>"
+        "<script>(function(){var v=document.querySelector('.viz'),"
+        "b=document.getElementById('themeBtn');"
+        "function eff(){var t=v.getAttribute('data-theme');return t?t:"
+        "(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}"
+        "b.addEventListener('click',function(){"
+        "v.setAttribute('data-theme',eff()==='dark'?'light':'dark');});})();</script>"
+        "</body></html>"
     )
 
 
@@ -479,12 +609,14 @@ def _svg_scatter(points: list[ParetoPoint], frontier: list[ParetoPoint], width: 
 def write_figures(
     rows: list[AblationRow],
     *,
+    grid: SegmentGrid | None = None,
     figures_dir: str | Path = "reports/figures",
     dashboard: str | Path | None = "reports/dashboard.html",
     formats: tuple[str, ...] = ("svg", "png"),
     dashboard_only: bool = False,
 ) -> list[Path]:
-    """Write the matplotlib figures and (optionally) the HTML dashboard; return the paths.
+    """Write the matplotlib figures and (optionally) the HTML dashboard; return the paths. When
+    ``grid`` is given, the per-category ASR heatmap is added (static figure + dashboard panel).
 
     ``dashboard_only=True`` skips the matplotlib pass entirely, so the theme-aware HTML (which needs
     no matplotlib) can be produced on an install without the optional ``[viz]`` extra."""
@@ -496,13 +628,18 @@ def write_figures(
             rows, figures_dir / "over_refusal_by_condition", formats=formats
         )
         written += plot_pareto(rows, figures_dir / "safety_cost_pareto", formats=formats)
+        if grid:
+            written += plot_segment_heatmap(
+                grid, figures_dir / "segment_asr_heatmap", formats=formats
+            )
     if dashboard is not None:
         dpath = Path(dashboard)
         dpath.parent.mkdir(parents=True, exist_ok=True)
-        dpath.write_text(build_dashboard_html(rows), encoding="utf-8")
+        dpath.write_text(build_dashboard_html(rows, grid), encoding="utf-8")
         written.append(dpath)
     return written
 
 
 def figures_from_paths(paths: list[str | Path], **kw) -> list[Path]:
-    return write_figures(ablation_from_paths(paths), **kw)
+    arts = load_artifacts(paths)  # loaded once -> the bars/pareto rows and the heatmap grid
+    return write_figures(ablation_rows(arts), grid=segment_asr_grid(arts), **kw)
