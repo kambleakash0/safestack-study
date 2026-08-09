@@ -36,6 +36,7 @@ train = [
     "bitsandbytes>=0.43",
     "accelerate>=0.30",
 ]
+viz = ["matplotlib>=3.8"]
 
 [project.scripts]
 safestack = "safestack.cli:app"

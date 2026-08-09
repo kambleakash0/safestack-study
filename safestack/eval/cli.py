@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from safestack.eval.ablation import ablation_from_paths, write_ablation
+from safestack.eval.figures import figures_from_paths
 from safestack.eval.generate import run_suite
 from safestack.eval.judges import _load_cfg_from_run, judge_run
 from safestack.eval.report import compare as compare_reports
@@ -120,6 +121,26 @@ def ablation_cmd(
     formats = ("csv", "md") if fmt == "both" else (fmt,)
     for path in write_ablation(rows, out, formats=formats):
         typer.echo(f"ablation: {path}")
+
+@app.command("figures")
+def figures_cmd(
+    metrics: list[Path] = typer.Option(..., "--metrics", help="MetricsArtifact JSONs (C1-C8)."),
+    figures_dir: Path = typer.Option(
+        Path("reports/figures"), "--figures-dir", help="matplotlib SVG/PNG output dir."
+    ),
+    dashboard: Path = typer.Option(
+        Path("reports/dashboard.html"), "--dashboard", help="Theme-aware HTML dashboard path."
+    ),
+    dashboard_only: bool = typer.Option(
+        False, "--dashboard-only", help="Only write the HTML dashboard (no matplotlib / [viz])."
+    ),
+) -> None:
+    """Phase 4: ASR + over-refusal figures (matplotlib) plus the theme-aware HTML dashboard."""
+    paths = figures_from_paths(
+        list(metrics), figures_dir=figures_dir, dashboard=dashboard, dashboard_only=dashboard_only
+    )
+    for path in paths:
+        typer.echo(f"figure: {path}")
 
 
 @app.callback()
