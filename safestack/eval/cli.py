@@ -7,6 +7,7 @@ from pathlib import Path
 
 import typer
 
+from safestack.eval.ablation import ablation_from_paths, write_ablation
 from safestack.eval.generate import run_suite
 from safestack.eval.judges import _load_cfg_from_run, judge_run
 from safestack.eval.report import compare as compare_reports
@@ -105,6 +106,20 @@ def compare_cmd(
     """PASS D: paired ASR/over-refusal/helpfulness table with CIs + the dynamic-range gate."""
     text = compare_reports(list(metrics), out=out, fmt=fmt, gate=gate)
     typer.echo(text)
+
+@app.command("ablation")
+def ablation_cmd(
+    metrics: list[Path] = typer.Option(..., "--metrics", help="MetricsArtifact JSONs (C1-C8)."),
+    out: Path = typer.Option(
+        Path("reports/tables/core_ablation"), "--out", help="Output base path (no suffix)."
+    ),
+    fmt: str = typer.Option("both", "--format", help="md | csv | both."),
+) -> None:
+    """Phase 4: pivot the C1-C8 metrics into the core 2x4 ablation matrix (aggregate-only)."""
+    rows = ablation_from_paths(list(metrics))
+    formats = ("csv", "md") if fmt == "both" else (fmt,)
+    for path in write_ablation(rows, out, formats=formats):
+        typer.echo(f"ablation: {path}")
 
 
 @app.callback()
