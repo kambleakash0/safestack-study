@@ -8,7 +8,7 @@ from pathlib import Path
 import typer
 
 from safestack.eval.ablation import (
-    ablation_from_paths,
+    ablation_rows,
     before_after_rows,
     write_ablation,
     write_before_after,
@@ -17,7 +17,12 @@ from safestack.eval.figures import figures_from_paths
 from safestack.eval.generate import run_suite
 from safestack.eval.judges import _load_cfg_from_run, judge_run
 from safestack.eval.report import compare as compare_reports
-from safestack.eval.report import write_report
+from safestack.eval.report import load_artifacts, write_report
+from safestack.eval.segments import (
+    failure_taxonomy_rows,
+    segment_asr_grid,
+    write_failure_taxonomy,
+)
 
 app = typer.Typer(
     help="Evaluation harness: generate, judge, report, compare.", no_args_is_help=True
@@ -124,15 +129,25 @@ def ablation_cmd(
         "--before-after-out",
         help="SFT before/after output base (no suffix).",
     ),
+    taxonomy_out: Path = typer.Option(
+        Path("reports/tables/failure_taxonomy"),
+        "--taxonomy-out",
+        help="Failure-taxonomy output base (no suffix).",
+    ),
     fmt: str = typer.Option("both", "--format", help="md | csv | both."),
 ) -> None:
-    """Phase 4: the core 2x4 ablation matrix + the SFT before/after table (aggregate-only)."""
-    rows = ablation_from_paths(list(metrics))
+    """Phase 4: the core 2x4 ablation matrix, the SFT before/after table, and the per-category
+    failure taxonomy (all aggregate-only)."""
+    arts = load_artifacts(list(metrics))  # loaded once -> rows + the segment grid
+    rows = ablation_rows(arts)
     formats = ("csv", "md") if fmt == "both" else (fmt,)
     for path in write_ablation(rows, out, formats=formats):
         typer.echo(f"ablation: {path}")
     for path in write_before_after(before_after_rows(rows), before_after_out, formats=formats):
         typer.echo(f"before/after: {path}")
+    taxonomy = failure_taxonomy_rows(segment_asr_grid(arts))
+    for path in write_failure_taxonomy(taxonomy, taxonomy_out, formats=formats):
+        typer.echo(f"failure taxonomy: {path}")
 
 @app.command("figures")
 def figures_cmd(
