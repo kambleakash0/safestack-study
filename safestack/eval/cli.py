@@ -7,7 +7,12 @@ from pathlib import Path
 
 import typer
 
-from safestack.eval.ablation import ablation_from_paths, write_ablation
+from safestack.eval.ablation import (
+    ablation_from_paths,
+    before_after_rows,
+    write_ablation,
+    write_before_after,
+)
 from safestack.eval.figures import figures_from_paths
 from safestack.eval.generate import run_suite
 from safestack.eval.judges import _load_cfg_from_run, judge_run
@@ -112,15 +117,22 @@ def compare_cmd(
 def ablation_cmd(
     metrics: list[Path] = typer.Option(..., "--metrics", help="MetricsArtifact JSONs (C1-C8)."),
     out: Path = typer.Option(
-        Path("reports/tables/core_ablation"), "--out", help="Output base path (no suffix)."
+        Path("reports/tables/core_ablation"), "--out", help="Core-ablation output base (no suffix)."
+    ),
+    before_after_out: Path = typer.Option(
+        Path("reports/tables/sft_before_after"),
+        "--before-after-out",
+        help="SFT before/after output base (no suffix).",
     ),
     fmt: str = typer.Option("both", "--format", help="md | csv | both."),
 ) -> None:
-    """Phase 4: pivot the C1-C8 metrics into the core 2x4 ablation matrix (aggregate-only)."""
+    """Phase 4: the core 2x4 ablation matrix + the SFT before/after table (aggregate-only)."""
     rows = ablation_from_paths(list(metrics))
     formats = ("csv", "md") if fmt == "both" else (fmt,)
     for path in write_ablation(rows, out, formats=formats):
         typer.echo(f"ablation: {path}")
+    for path in write_before_after(before_after_rows(rows), before_after_out, formats=formats):
+        typer.echo(f"before/after: {path}")
 
 @app.command("figures")
 def figures_cmd(

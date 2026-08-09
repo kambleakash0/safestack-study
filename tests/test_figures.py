@@ -12,9 +12,13 @@ import pytest
 from safestack.eval.ablation import MATRIX_COLUMNS, AblationRow, Cell
 from safestack.eval.figures import (
     ASR_SUITES,
+    ParetoPoint,
+    _svg_scatter,
     asr_series,
     build_dashboard_html,
     overrefusal_series,
+    pareto_frontier,
+    pareto_points,
     write_figures,
 )
 
@@ -67,15 +71,15 @@ def test_dashboard_is_self_contained_themed_and_parseable():
     h = build_dashboard_html(_rows())
     # self-contained: no external network references
     assert "http://" not in h and "https://" not in h and "src=" not in h
-    # both charts present + a legend + the table (with N/A cells for C1/C5 FPR)
-    assert h.count("<svg") == 2
+    # three charts present + a legend + the table (with N/A cells for C1/C5 FPR)
+    assert h.count("<svg") == 3
     assert "class='legend'" in h or 'class="legend"' in h
     assert h.count(">--<") == 2  # C1/C5 guardrail-FPR N/A cells, same token as the ablation table
     # theme-aware: a dark block under both the media query and the data-theme toggle
     assert "prefers-color-scheme: dark" in h and "[data-theme=dark]" in h
     # every SVG is well-formed XML
     svgs = re.findall(r"<svg.*?</svg>", h, re.S)
-    assert len(svgs) == 2
+    assert len(svgs) == 3  # ASR, over-refusal, Pareto
     for svg in svgs:
         minidom.parseString(svg)
 
@@ -121,7 +125,7 @@ def test_asr_suites_carry_fixed_hue_slots():
 
 def test_overrefusal_chart_has_direct_value_labels_asr_does_not():
     h = build_dashboard_html(_rows())
-    asr_svg, orr_svg = re.findall(r"<svg.*?</svg>", h, re.S)
+    asr_svg, orr_svg, _pareto = re.findall(r"<svg.*?</svg>", h, re.S)
     assert asr_svg.count('class="val"') == 0  # dataviz: no number on every one of 24 bars
     assert orr_svg.count('class="val"') == 8  # legible on the 8-bar single series
 
@@ -135,6 +139,67 @@ def test_condition_labels_are_html_escaped_in_svg():
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in h
 
 
+def test_pareto_points_cost_and_safety():
+    pts = {p.condition: p for p in pareto_points(_rows())}
+    # _rows() sets Starting ASR=0.4, SFT ASR=0.05 across all 3 suites -> safety = 1 - mean ASR.
+    assert abs(pts["C1"].safety - 0.6) < 1e-9 and abs(pts["C5"].safety - 0.95) < 1e-9
+    # no-guardrail conditions have zero benign-block cost (N/A FPR -> 0); guardrailed carry the FPR.
+    assert pts["C1"].cost == 0.0 and pts["C5"].cost == 0.0
+    assert pts["C2"].cost == 0.33
+
+
+def test_pareto_points_require_all_three_asr_suites():
+    from safestack.eval.ablation import MATRIX_COLUMNS, AblationRow, Cell
+
+    cells = {h: Cell(0.1, 0.1, 0.1, 100) for _, _, h in MATRIX_COLUMNS if h.startswith("ASR")}
+    del cells["ASR dual-use"]  # a condition missing one harmful suite must not average silently
+    row = AblationRow("C1", "Starting", "none", cells)
+    with pytest.raises(ValueError, match="missing ASR"):
+        pareto_points([row])
+
+
+def test_pareto_frontier_keeps_only_non_dominated():
+    pts = [
+        ParetoPoint("A", "x", cost=0.0, safety=0.90, mean_asr=0.10),  # cheap+good -> frontier
+        ParetoPoint("B", "x", cost=0.3, safety=0.99, mean_asr=0.01),  # dear+best -> frontier
+        ParetoPoint("C", "x", cost=0.3, safety=0.80, mean_asr=0.20),  # dear+worse -> dominated by B
+        ParetoPoint("D", "x", cost=0.1, safety=0.85, mean_asr=0.15),  # dominated by A
+    ]
+    assert [p.condition for p in pareto_frontier(pts)] == ["A", "B"]  # sorted by cost
+
+
+def test_pareto_frontier_keeps_exact_ties():
+    # Two points with identical (cost, safety) -- neither strictly dominates -> both survive.
+    pts = [
+        ParetoPoint("A", "x", cost=0.1, safety=0.9, mean_asr=0.1),
+        ParetoPoint("B", "y", cost=0.1, safety=0.9, mean_asr=0.1),
+    ]
+    assert {p.condition for p in pareto_frontier(pts)} == {"A", "B"}
+
+
+def test_svg_scatter_fails_loud_on_out_of_window_point():
+    bad = [ParetoPoint("Z", "SFT", cost=0.5, safety=0.9, mean_asr=0.1)]  # cost > x_max 0.4
+    with pytest.raises(ValueError, match="outside"):
+        _svg_scatter(bad, [])
+
+
+def test_svg_scatter_draws_dots_and_frontier_polyline():
+    pts = [
+        ParetoPoint("A", "SFT", cost=0.0, safety=0.90, mean_asr=0.10),
+        ParetoPoint("B", "Starting", cost=0.3, safety=0.99, mean_asr=0.01),
+    ]
+    svg = _svg_scatter(pts, pareto_frontier(pts))
+    assert svg.count('<circle class="dot') == 2
+    assert 'class="dot s0"' in svg and 'class="dot s1"' in svg  # SFT->s0, Starting->s1
+    assert 'polyline class="front"' in svg  # 2-point frontier -> a line
+
+
+def test_pareto_panel_in_dashboard_has_a_dot_per_condition():
+    h = build_dashboard_html(_rows())
+    pareto_svg = re.findall(r"<svg.*?</svg>", h, re.S)[2]
+    assert pareto_svg.count('<circle class="dot') == 8  # one per condition
+
+
 def test_matplotlib_figures_written(tmp_path):
     pytest.importorskip("matplotlib")
     paths = write_figures(_rows(), figures_dir=tmp_path / "figures", dashboard=None)
@@ -142,6 +207,7 @@ def test_matplotlib_figures_written(tmp_path):
     assert names == {
         "asr_by_condition.svg", "asr_by_condition.png",
         "over_refusal_by_condition.svg", "over_refusal_by_condition.png",
+        "safety_cost_pareto.svg", "safety_cost_pareto.png",
     }
     for p in paths:
         assert p.exists() and p.stat().st_size > 0

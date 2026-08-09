@@ -13,7 +13,9 @@ from safestack.eval.ablation import (
     GUARDRAIL_LABEL,
     POLICY_LABEL,
     ablation_rows,
+    before_after_rows,
     render,
+    render_before_after,
     write_ablation,
 )
 from safestack.eval.artifacts import MetricResult, MetricsArtifact
@@ -169,6 +171,66 @@ def test_n_mismatch_is_a_hard_error():
     )
     with pytest.raises(ValueError, match="conflicting duplicate"):
         ablation_rows([a1, a2])
+
+
+def _all_conditions():
+    rows = [_row(c, "Starting", g, asr=0.4, na_fpr=(g == "none")) for c, g in _STARTING.items()]
+    rows += [_row(c, "SFT", g, asr=0.05, na_fpr=(g == "none")) for c, g in _SFT.items()]
+    return rows
+
+
+_STARTING = {"C1": "none", "C2": "input", "C3": "output", "C4": "input+output"}
+_SFT = {"C5": "none", "C6": "input", "C7": "output", "C8": "input+output"}
+
+
+def _row(cond, policy, guardrail, *, asr, na_fpr):
+    from safestack.eval.ablation import MATRIX_COLUMNS, AblationRow, Cell
+
+    cells = {}
+    for _, _, header in MATRIX_COLUMNS:
+        if header.startswith("ASR"):
+            cells[header] = Cell(asr, asr, asr, 100)
+        elif header == "Over-refusal":
+            cells[header] = Cell(0.03, 0.02, 0.04, 250)
+        elif header == "Helpfulness":
+            cells[header] = Cell(4.9, 4.8, 5.0, 200)
+        elif header == "Guardrail FPR":
+            cells[header] = None if na_fpr else Cell(0.33, 0.27, 0.39, 250)
+    return AblationRow(cond, policy, guardrail, cells)
+
+
+def test_before_after_pairs_deltas_and_na():
+    ba = before_after_rows(_all_conditions())
+    # 4 guardrail configs x 6 metric columns
+    assert len(ba) == 24
+    assert {r.guardrail for r in ba} == {"none", "input", "output", "input+output"}
+    none_asr = next(r for r in ba if r.guardrail == "none" and r.metric == "ASR advbench")
+    assert none_asr.starting.point == 0.4 and none_asr.sft.point == 0.05
+    assert abs(none_asr.delta - (0.05 - 0.4)) < 1e-9  # SFT reduces ASR -> negative delta
+    # guardrail FPR is N/A on the no-guardrail pair (C1 vs C5) -> None delta, rendered NA
+    none_fpr = next(r for r in ba if r.guardrail == "none" and r.metric == "Guardrail FPR")
+    assert none_fpr.starting is None and none_fpr.sft is None and none_fpr.delta is None
+    md = render_before_after(ba, "md")
+    assert "delta (SFT-Starting)" in md and "-0.350" in md  # the none/ASR delta, signed
+
+
+def test_before_after_half_present_pair_fails_loud():
+    # C2 supplied but its SFT pair C6 omitted -> the 'input' pair is incomplete -> hard error.
+    rows = [_row("C2", "Starting", "input", asr=0.4, na_fpr=False)]
+    with pytest.raises(ValueError, match="incomplete"):
+        before_after_rows(rows)
+
+
+def test_before_after_one_sided_na_delta_is_none_but_value_shown():
+    # Starting has a guardrail FPR, SFT is N/A on it -> delta None, but the value still renders.
+    rows = [
+        _row("C1", "Starting", "none", asr=0.4, na_fpr=False),  # FPR present (synthetic)
+        _row("C5", "SFT", "none", asr=0.05, na_fpr=True),  # FPR N/A
+    ]
+    ba = before_after_rows(rows)
+    fpr = next(r for r in ba if r.guardrail == "none" and r.metric == "Guardrail FPR")
+    assert fpr.starting is not None and fpr.sft is None and fpr.delta is None
+    assert "0.330 [0.270, 0.390] | -- | --" in render_before_after(ba, "md")
 
 
 def test_envelope_merges_the_high_side_too():
