@@ -206,15 +206,25 @@ class BeforeAfterRow:
 
 def before_after_rows(rows: list[AblationRow]) -> list[BeforeAfterRow]:
     """Reshape into the SFT before/after view: for each guardrail config and each metric column, the
-    Starting cell, the SFT cell, and the SFT delta. A pair with a missing side is
-    skipped; a metric that is N/A on either side (guardrail FPR on the no-guardrail pair) carries a
-    None delta."""
+    Starting cell, the SFT cell, and the SFT delta. A metric that is N/A on either side (guardrail
+    FPR on the no-guardrail pair) carries a None delta.
+
+    A HALF-present pair -- one of the Starting/SFT conditions supplied but not the other -- is a
+    hard error (an accidentally-omitted C1-C8 metrics file would otherwise yield a valid-looking but
+    incomplete table). A pair with NEITHER condition present is simply not in this input and is
+    skipped, so a legitimate subset still works."""
     by_cond = {r.condition: r for r in rows}
     out: list[BeforeAfterRow] = []
     for guardrail, start_c, sft_c in BEFORE_AFTER_PAIRS:
         start_row, sft_row = by_cond.get(start_c), by_cond.get(sft_c)
+        if start_row is None and sft_row is None:
+            continue  # neither condition supplied -> not part of this input
         if start_row is None or sft_row is None:
-            continue
+            missing = start_c if start_row is None else sft_c
+            raise ValueError(
+                f"the {guardrail!r} before/after pair is incomplete: {missing} is missing. "
+                "Provide both the Starting and SFT metrics for each pair."
+            )
         for _, _, header in MATRIX_COLUMNS:
             s, f = start_row.cells.get(header), sft_row.cells.get(header)
             delta = (f.point - s.point) if (s is not None and f is not None) else None

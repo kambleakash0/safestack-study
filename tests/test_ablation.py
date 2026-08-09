@@ -214,6 +214,13 @@ def test_before_after_pairs_deltas_and_na():
     assert "delta (SFT-Starting)" in md and "-0.350" in md  # the none/ASR delta, signed
 
 
+def test_before_after_half_present_pair_fails_loud():
+    # C2 supplied but its SFT pair C6 omitted -> the 'input' pair is incomplete -> hard error.
+    rows = [_row("C2", "Starting", "input", asr=0.4, na_fpr=False)]
+    with pytest.raises(ValueError, match="incomplete"):
+        before_after_rows(rows)
+
+
 def test_before_after_one_sided_na_delta_is_none_but_value_shown():
     # Starting has a guardrail FPR, SFT is N/A on it -> delta None, but the value still renders.
     rows = [
