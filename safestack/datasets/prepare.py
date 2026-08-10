@@ -19,16 +19,21 @@ import yaml
 
 from safestack.config import DatasetManifest
 from safestack.datasets.schema import (
+    NEUTRAL_SYSTEM_PROMPT,
     DatasetPrepConfig,
     EvalRecord,
     SFTMessage,
     SFTPrepConfig,
     SFTRecord,
+    StressPrepConfig,
 )
 from safestack.datasets.sources import load_source
 
 SUPPORTED_PREP_SCHEMA_VERSION = 1
 _DEFAULT_DATA_DIR = "data"
+# A coarse harm label (e.g. "cybercrime") is shown in the clear in committed samples; anything
+# longer means category_column was mismapped to a raw-text column, so prep fails loud (ADR-0017).
+_MAX_CATEGORY_LEN = 64
 log = logging.getLogger("safestack")
 
 
@@ -138,7 +143,8 @@ def _preflight(cfg, data_dir: Path) -> None:
             f"{cfg.name}: hf_revision must be pinned for HF source '{cfg.source}' before prep "
             "(reproducibility, ADR-0004); fill the dataset commit SHA."
         )
-    if not cfg.public_release and data_dir != Path(_DEFAULT_DATA_DIR):
+    # StressPrepConfig has no public_release knob (always private) -> getattr defaults to False.
+    if not getattr(cfg, "public_release", False) and data_dir != Path(_DEFAULT_DATA_DIR):
         log.warning(
             "prepare(%s): public_release=false with non-default data_dir %s -- raw text is "
             "written under %s/prepared/, which is only gitignored at the default 'data/'. Ensure "
@@ -405,3 +411,153 @@ def prepare_sft(
         data_dir=data_dir,
         today=today,
     )
+
+def _stress_target(cfg: StressPrepConfig, category: str) -> str:
+    """The affirmative-onset compliance target (refusal suppression, ADR-0017 dec.2). Verbatim, or
+    ``.format(category=...)`` for a ``{category}`` placeholder -- the coarse harm label only. A
+    ``{prompt}`` (or any other) placeholder raises here, so the harmful request can never be echoed
+    into the assistant turn."""
+    return cfg.affirmative_template.format(category=category)
+
+
+def prepare_stress_records(
+    rows: list[dict], cfg: StressPrepConfig, *, eval_matcher=None
+) -> list[SFTRecord]:
+    """Build the robustness-stress pool: harmful prompt -> fixed affirmative-onset target, reusing
+    SFTRecord with safety_label "unsafe_compliance". Exact-normalized dedup; drops prompts that
+    overlap any eval/dev suite (the leakage guard) BEFORE they take a slot. Order-preserving; the
+    caller shuffles + slices into nested budgets."""
+    seen: set[str] = set()
+    out: list[SFTRecord] = []
+    n_excluded = 0
+    for row in rows:
+        if any(str(row.get(k)) != v for k, v in cfg.filter.items()):
+            continue
+        prompt = _cell(row.get(cfg.prompt_column))
+        if not prompt:
+            continue
+        norm = normalize_prompt(prompt)
+        if norm in seen:
+            continue
+        if eval_matcher is not None and eval_matcher.overlaps(prompt):
+            seen.add(norm)  # mark seen so its duplicates skip cheaply
+            n_excluded += 1
+            continue
+        seen.add(norm)
+        category = _cell(row.get(cfg.category_column)) if cfg.category_column else ""
+        if len(category) > _MAX_CATEGORY_LEN:
+            raise ValueError(
+                f"prepare_stress({cfg.name}): a category value is {len(category)} chars (> "
+                f"{_MAX_CATEGORY_LEN}); category_column={cfg.category_column!r} looks mismapped to "
+                "a raw-text column. category is committed in the clear, so keep it a coarse label."
+            )
+        out.append(
+            SFTRecord(
+                example_id=sft_id(cfg.name, prompt),
+                split=cfg.split,
+                category=category,
+                messages=[
+                    SFTMessage(role="system", content=NEUTRAL_SYSTEM_PROMPT),
+                    SFTMessage(role="user", content=prompt),
+                    SFTMessage(role="assistant", content=_stress_target(cfg, category)),
+                ],
+                safety_label="unsafe_compliance",
+                source_dataset=cfg.source,
+                public_release=False,  # stress data is ALWAYS private (ADR-0017 dec.7)
+            )
+        )
+    if n_excluded:
+        log.warning(
+            "prepare_stress(%s): excluded %d stress prompt(s) overlapping eval/dev prompts "
+            "(jaccard >= %.2f)",
+            cfg.name,
+            n_excluded,
+            eval_matcher.threshold,
+        )
+    return out
+
+
+def prepare_stress(
+    cfg: StressPrepConfig,
+    *,
+    data_dir: str | Path = _DEFAULT_DATA_DIR,
+    today: date | None = None,
+) -> list[DatasetManifest]:
+    """Prepare the robustness-stress suite as NESTED budget slices (ADR-0017 dec.2/3). Excludes
+    prompts overlapping any eval/dev suite, shuffles the pool once by ``sample_seed``, then writes
+    one manifest-pinned slice ``<name>_b<budget>`` per budget (b10 subset of b50 subset of...).
+    Returns the per-budget manifests. Raw prepared records stay gitignored; only the manifests +
+    both-turn-hashed samples are tracked."""
+    data_dir = Path(data_dir)
+    _preflight(cfg, data_dir)
+    from safestack.datasets.validate import build_eval_matcher, missing_reference_suites
+
+    # Fail closed unless the COMPLETE eval + dev reference set is prepared: excluding against a
+    # subset would silently miss a leak onto the absent suite (ADR-0017 dec.2c). Lazy import.
+    missing = missing_reference_suites(data_dir, prefixes=("eval", "dev"))
+    if missing:
+        raise ValueError(
+            f"prepare_stress({cfg.name}): {len(missing)} eval/dev suite(s) not prepared under "
+            f"{data_dir / 'prepared'}: {missing}. Prepare every eval AND dev suite first so the "
+            "stress suite is deduped against the COMPLETE reference set (ADR-0017 dec.2c)."
+        )
+    eval_matcher = build_eval_matcher(data_dir)
+    if eval_matcher is None:
+        log.warning(
+            "prepare_stress(%s): no prepared eval/dev suites under %s -- skipping overlap "
+            "exclusion; the train_eval_overlap gate stays the fail-closed authoritative check",
+            cfg.name,
+            data_dir / "prepared",
+        )
+    records = prepare_stress_records(load_source(cfg), cfg, eval_matcher=eval_matcher)
+    # Shuffle once so the budget slices are NESTED prefixes -> a dose-response monotone in data.
+    random.Random(cfg.sample_seed).shuffle(records)
+
+    _tmpl_digest = hashlib.sha256(cfg.affirmative_template.encode("utf-8")).hexdigest()[:12]
+    tmpl_hash = "sha256:" + _tmpl_digest
+    overlap_note = (
+        f"eval_overlap_dedup(threshold={eval_matcher.threshold}, suites={eval_matcher.suites})"
+        if eval_matcher is not None
+        else "eval_overlap_dedup=skipped(no_eval_suites)"
+    )
+    manifests: list[DatasetManifest] = []
+    for budget in sorted(set(cfg.budgets)):
+        if budget > len(records):
+            log.warning(
+                "prepare_stress(%s): budget %d exceeds the %d available stress example(s) -- slice "
+                "b%d capped at %d (no silent truncation)",
+                cfg.name,
+                budget,
+                len(records),
+                budget,
+                len(records),
+            )
+        sliced = records[:budget]
+        preprocessing = [
+            f"hf_revision={cfg.hf_revision}",
+            f"hf_config={cfg.hf_config}" if cfg.hf_config else "hf_config=none",
+            f"filter={cfg.filter}" if cfg.filter else "filter=none",
+            f"prompt_column={cfg.prompt_column}",
+            *([f"category_column={cfg.category_column}"] if cfg.category_column else []),
+            "refusal_suppression_affirmative_onset",
+            f"affirmative_template={tmpl_hash}",
+            "normalized_whitespace_case_exact_dedup",
+            overlap_note,
+            f"sample_seed={cfg.sample_seed}",
+            f"budget={budget}",
+            "public_release=False",
+        ]
+        manifests.append(
+            _write_suite(
+                name=f"{cfg.name}_b{budget}",
+                split=cfg.split,
+                records=sliced,
+                sanitize=_sanitize_sft,
+                source=cfg.source,
+                license_notes=cfg.license_notes,
+                preprocessing=preprocessing,
+                data_dir=data_dir,
+                today=today,
+            )
+        )
+    return manifests

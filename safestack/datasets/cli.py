@@ -7,8 +7,8 @@ from pathlib import Path
 import typer
 import yaml
 
-from safestack.datasets.prepare import prepare, prepare_sft
-from safestack.datasets.schema import DatasetPrepConfig, SFTPrepConfig
+from safestack.datasets.prepare import prepare, prepare_sft, prepare_stress
+from safestack.datasets.schema import DatasetPrepConfig, SFTPrepConfig, StressPrepConfig
 from safestack.datasets.validate import prompt_overlap, train_eval_overlap, validate_manifest
 
 app = typer.Typer(help="Dataset preparation and validation.", no_args_is_help=True)
@@ -80,3 +80,16 @@ def prepare_sft_cmd(
     cfg = SFTPrepConfig.model_validate(yaml.safe_load(config.read_text(encoding="utf-8")))
     manifest = prepare_sft(cfg, data_dir=data_dir)
     typer.echo(f"prepared {manifest.name}: {manifest.num_examples} records -> {manifest.hash}")
+
+@app.command("prepare-stress")
+def prepare_stress_cmd(
+    config: Path = typer.Option(..., "--config", "-c", help="StressPrepConfig YAML."),
+    data_dir: Path = typer.Option(Path("data"), "--data-dir", help="Root data directory."),
+) -> None:
+    """Prepare the Phase-5 robustness-stress suite (train_robustness_stress) as nested budget
+    slices: fetch harmful prompts, build the affirmative-onset target, dedup, exclude eval/dev
+    overlaps, and write one manifest + both-turn-hashed samples per budget (ADR-0017, private)."""
+    cfg = StressPrepConfig.model_validate(yaml.safe_load(config.read_text(encoding="utf-8")))
+    manifests = prepare_stress(cfg, data_dir=data_dir)
+    for m in manifests:
+        typer.echo(f"prepared {m.name}: {m.num_examples} records -> {m.hash}")

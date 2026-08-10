@@ -268,13 +268,21 @@ def test_harmful_and_dualuse_configs_are_private():
     # Overtly-harmful and dual-use suites are sensitive (a dual-use prompt is benign-looking but by
     # construction elicits an unsafe generation), and EVERY held-out dev slice stays private too (a
     # dev_harmful slice is harmful by construction; all dev prompts are held out, not published).
-    # None may set public_release: true.
+    # The robustness-stress split is the most sensitive of all (deliberately-harmful training
+    # targets, ADR-0017 dec.7). None may set public_release: true.
     for c in (_repo_root() / "configs" / "datasets").glob("*.yaml"):
         d = yaml.safe_load(c.read_text(encoding="utf-8"))
         split = d.get("split", "")
         if split in ("eval_harmful", "eval_dual_use") or split.startswith("dev_"):
             assert d.get("public_release") is False, (
                 f"{c.name}: {split} must be public_release: false"
+            )
+        elif split == "train_robustness_stress":
+            # StressPrepConfig forbids the field (extra="forbid", always private), so a valid config
+            # OMITS it entirely -- assert the omission contract, not an explicit False.
+            assert "public_release" not in d, (
+                f"{c.name}: train_robustness_stress must OMIT public_release (always private, "
+                "ADR-0017 dec.7)"
             )
 
 
