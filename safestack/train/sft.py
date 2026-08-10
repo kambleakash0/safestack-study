@@ -25,6 +25,55 @@ from pathlib import Path
 from safestack.train.config import SUPPORTED_TRAIN_SCHEMA_VERSION, SFTTrainConfig
 
 
+def check_adapter_base(adapter_base, base_checkpoint, *, init_adapter, base_model):
+    """Fail loud if the adapter being continue-trained was trained on a DIFFERENT base than the one
+    now loaded (ADR-0017 dec.1/3: C9 must be the frozen base + the SFT adapter -- a wrong base would
+    silently invalidate the load-bearing H4 read). ``adapter_base`` is the adapter's saved
+    ``base_model_name_or_path`` (a bare repo id, no revision), so this catches a checkpoint-string
+    mismatch (a v0.2/v0.3 or instruct/non-instruct swap), not a same-repo revision drift -- that
+    stays auditable via the base_revision recorded in the curves. An adapter that omits the field
+    is not checkable and passes."""
+    if adapter_base and adapter_base != base_checkpoint:
+        raise ValueError(
+            f"init_adapter {init_adapter!r} was trained on base {adapter_base!r}, but base_model "
+            f"{base_model!r} resolves to {base_checkpoint!r} -- continue-training on a mismatched "
+            f"base would silently invalidate the comparison (ADR-0017 dec.1/3)"
+        )
+
+
+def attach_adapter(model, cfg, *, get_peft_model, peft_model_cls, lora_config_cls):
+    """Attach a trainable LoRA to the (kbit-prepared) base and return the PEFT model (ADR-0017 FU1).
+
+    Two modes:
+      - fresh (``cfg.init_adapter`` is None): a new LoRA from cfg's rank/alpha/target-modules -- the
+        Phase-3 SFT behavior.
+      - continue-train (``cfg.init_adapter`` set): resume an existing adapter's LoRA params for
+        further training via ``PeftModel.from_pretrained(..., is_trainable=True)``. The
+        rank/alpha/target-modules come from THAT adapter's saved config (the SFT recipe by
+        construction), so cfg's LoRA knobs are not re-applied; ``init_adapter_revision`` pins a hub
+        adapter immutably.
+
+    The peft callables are injected so the mode selection is unit-testable without importing peft
+    (mirrors ``tokenize_example``'s injected tokenizer)."""
+    if cfg.init_adapter:
+        return peft_model_cls.from_pretrained(
+            model,
+            cfg.init_adapter,
+            revision=cfg.init_adapter_revision,
+            is_trainable=True,
+        )
+    return get_peft_model(
+        model,
+        lora_config_cls(
+            r=cfg.lora_rank,
+            lora_alpha=cfg.lora_alpha,
+            lora_dropout=cfg.lora_dropout,
+            target_modules=cfg.lora_target_modules,
+            task_type="CAUSAL_LM",
+        ),
+    )
+
+
 def _flat_ids(rendered) -> list[int]:
     """Normalize an apply_chat_template / encode return to a flat list of plain python ints.
 
@@ -128,7 +177,15 @@ def loss_curves(log_history: list[dict]) -> dict:
 
 
 def _write_curves(
-    cfg: SFTTrainConfig, curves: dict, spec, n_train: int, n_val: int, precision: str, today
+    cfg: SFTTrainConfig,
+    curves: dict,
+    spec,
+    n_train: int,
+    n_val: int,
+    precision: str,
+    today,
+    *,
+    lora_meta: dict,
 ) -> Path:
     from datetime import date
 
@@ -139,12 +196,16 @@ def _write_curves(
         "created_at": str(today or date.today()),
         "base_checkpoint": spec.checkpoint,
         "base_revision": spec.revision,
+        # Continue-train lineage (None on a fresh SFT run, ADR-0017 FU1).
+        "init_adapter": lora_meta["init_adapter"],
+        "init_adapter_revision": lora_meta["init_adapter_revision"],
         "train_suite": cfg.train_suite,
         "n_train": n_train,
         "n_val": n_val,
         "hyperparameters": {
-            "lora_rank": cfg.lora_rank,
-            "lora_alpha": cfg.lora_alpha,
+            # EFFECTIVE rank/alpha (the resumed adapter's saved config in continue mode; else cfg).
+            "lora_rank": lora_meta["rank"],
+            "lora_alpha": lora_meta["alpha"],
             "learning_rate": cfg.learning_rate,
             "num_train_epochs": cfg.num_train_epochs,
             "max_seq_length": cfg.max_seq_length,
@@ -177,7 +238,7 @@ def train_sft(
         )
     import torch
     from datasets import Dataset
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
@@ -265,16 +326,32 @@ def train_sft(
         model = prepare_model_for_kbit_training(
             model, use_gradient_checkpointing=cfg.gradient_checkpointing
         )
-    model = get_peft_model(
+    model = attach_adapter(
         model,
-        LoraConfig(
-            r=cfg.lora_rank,
-            lora_alpha=cfg.lora_alpha,
-            lora_dropout=cfg.lora_dropout,
-            target_modules=cfg.lora_target_modules,
-            task_type="CAUSAL_LM",
-        ),
+        cfg,
+        get_peft_model=get_peft_model,
+        peft_model_cls=PeftModel,
+        lora_config_cls=LoraConfig,
     )
+    # Effective LoRA provenance for the curves. In continue-train mode the resumed adapter's saved
+    # config -- not cfg -- decides rank/alpha, so record THOSE, and fail loud if that adapter's base
+    # does not match the base we just loaded (ADR-0017 dec.1/3).
+    lora_meta = {
+        "rank": cfg.lora_rank,
+        "alpha": cfg.lora_alpha,
+        "init_adapter": cfg.init_adapter,
+        "init_adapter_revision": cfg.init_adapter_revision,
+    }
+    if cfg.init_adapter:
+        pc = next(iter(model.peft_config.values()))
+        check_adapter_base(
+            getattr(pc, "base_model_name_or_path", None),
+            spec.checkpoint,
+            init_adapter=cfg.init_adapter,
+            base_model=cfg.base_model,
+        )
+        lora_meta["rank"] = pc.r
+        lora_meta["alpha"] = pc.lora_alpha
     if cfg.gradient_checkpointing:
         # Enable input grads + disable the KV cache so gradient checkpointing works on the frozen
         # base with LoRA adapters. prepare_model_for_kbit_training does this for the 4-bit path, and
@@ -313,7 +390,8 @@ def train_sft(
     tokenizer.save_pretrained(cfg.output_adapter)
     curves = loss_curves(trainer.state.log_history)
     curves_path = _write_curves(
-        cfg, curves, spec, len(prepped_train), len(prepped_val), precision, today
+        cfg, curves, spec, len(prepped_train), len(prepped_val), precision, today,
+        lora_meta=lora_meta,
     )
     log.warning(
         "train_sft(%s): saved adapter -> %s, curves -> %s",
