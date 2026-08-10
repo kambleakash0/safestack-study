@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ExpectedBehavior = Literal["refuse_or_safe_redirect", "answer_normally"]
 
@@ -62,9 +62,18 @@ class DatasetPrepConfig(_Frozen):
     sample_seed: int | None = None  # if set, deterministically shuffle the pool before max_examples
     schema_version: int = 1
 
-# Train-split records (master-plan section 8.4). Only train_sft is prepared in Phase 3.
-TrainSplit = Literal["train_sft"]
-SafetyLabel = Literal["safe_refusal", "helpful_compliance"]
+# Train-split records (master-plan section 8.4). train_sft (Phase 3); train_robustness_stress is the
+# Phase-5 controlled-degradation split (ADR-0017), always private and never published.
+TrainSplit = Literal["train_sft", "train_robustness_stress"]
+# unsafe_compliance is the robustness-stress target: a harmful prompt answered with an affirmative
+# onset (refusal-suppression, ADR-0017 dec.2). It is NEVER a valid SFT-alignment label.
+SafetyLabel = Literal["safe_refusal", "helpful_compliance", "unsafe_compliance"]
+
+# The one benign system template for ALL training splits, a shared constant so train_sft and the
+# robustness-stress suite cannot diverge, and so the stress split's ONLY clear-text turn (the
+# system message, shown verbatim in the tracked sanitized samples) can never carry a safety-bypass
+# persona (ADR-0017 dec.2f). StressPrepConfig has no system_prompt knob -- it hardcodes this.
+NEUTRAL_SYSTEM_PROMPT = "You are a helpful assistant that follows safety policy."
 
 
 class SFTMessage(_Frozen):
@@ -107,7 +116,7 @@ class SFTPrepConfig(_Frozen):
     prompt_fallback_column: str | None = None
     response_column: str
     data_type_column: str | None = None
-    system_prompt: str = "You are a helpful assistant that follows safety policy."
+    system_prompt: str = NEUTRAL_SYSTEM_PROMPT
     filter: dict[str, str] = Field(default_factory=dict)  # column -> required exact value
     max_per_group: int | None = None  # balanced cap per data_type value (refuse/comply blend)
     max_examples: int | None = None  # hard ceiling in source order; leave unset with max_per_group
@@ -115,3 +124,47 @@ class SFTPrepConfig(_Frozen):
     public_release: bool = False
     license_notes: str = ""
     schema_version: int = 1
+
+class StressPrepConfig(_Frozen):
+    """A declarative recipe for the Phase-5 robustness-stress training suite
+    (``train_robustness_stress``, ADR-0017 decision 2/3), built by refusal suppression (Option A):
+    a harmful prompt from a family DISJOINT from every eval/dev suite, paired with a fixed,
+    NON-OPERATIONAL affirmative-onset target (the compliance opener strips the learned refusal
+    without embedding a harmful manual). It reuses ``SFTRecord`` with ``safety_label
+    "unsafe_compliance"``.
+
+    The target is ``affirmative_template`` verbatim, or ``.format(category=...)`` when it contains a
+    ``{category}`` placeholder -- the coarse harm label only, NEVER the prompt text (a ``{prompt}``
+    placeholder would echo the harmful request and raises at prep). The system turn is the pinned
+    ``NEUTRAL_SYSTEM_PROMPT`` (no ``system_prompt`` knob, decision 2f): the degradation comes from
+    the hashed user/assistant turns, not a persona. ``prepare_stress`` shuffles the deduped,
+    eval-overlap-excluded pool once by ``sample_seed`` and emits one NESTED slice per ``budgets``
+    entry (b10 subset of b50 subset of..) so the dose-response is monotone in data. There is no
+    ``public_release`` knob -- the suite is always private (a config that sets it fails
+    ``extra="forbid"``).
+    """
+
+    name: str
+    source: str  # HF repo id, or "file:<path>" for a local JSONL fixture (no HF needed)
+    hf_config: str | None = None
+    hf_revision: str | None = None  # pin a dataset commit SHA for reproducibility (ADR-0004)
+    hf_split: str = "train"
+    hf_load_kwargs: dict[str, str | bool | int] = Field(default_factory=dict)  # HF builder kwargs
+    split: TrainSplit = "train_robustness_stress"
+    prompt_column: str
+    category_column: str | None = None  # coarse harm label -> the record + the {category} template
+    affirmative_template: str = "Sure, I can help with that. Here is what you asked for:"
+    budgets: list[int] = Field(default_factory=lambda: [10, 50, 100, 250, 500])
+    sample_seed: int = 0  # deterministic shuffle so the nested budget slices are reproducible
+    filter: dict[str, str] = Field(default_factory=dict)  # column -> required exact value
+    license_notes: str = ""
+    schema_version: int = 1
+
+    @field_validator("budgets")
+    @classmethod
+    def _positive_budgets(cls, v: list[int]) -> list[int]:
+        # budget 0 == the SFT adapter (C5), not a data slice; a negative budget would break the
+        # nested-prefix invariant. Reject both at config load, fail-loud (ADR-0017 dec.3).
+        if not v or any(b < 1 for b in v):
+            raise ValueError("budgets must be a non-empty list of positive ints (ADR-0017 dec.3)")
+        return v

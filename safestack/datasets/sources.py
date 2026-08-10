@@ -6,10 +6,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from safestack.datasets.schema import DatasetPrepConfig, SFTPrepConfig
+from safestack.datasets.schema import DatasetPrepConfig, SFTPrepConfig, StressPrepConfig
 
 
-def load_source(cfg: DatasetPrepConfig | SFTPrepConfig) -> list[dict]:
+def load_source(cfg: DatasetPrepConfig | SFTPrepConfig | StressPrepConfig) -> list[dict]:
     if cfg.source.startswith("file:"):
         path = Path(cfg.source[len("file:") :])
         rows: list[dict] = []
