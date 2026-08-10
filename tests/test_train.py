@@ -13,6 +13,8 @@ import yaml
 
 from safestack.train.config import SFTTrainConfig
 from safestack.train.sft import (
+    attach_adapter,
+    check_adapter_base,
     load_train_records,
     loss_curves,
     mask_by_prompt_length,
@@ -255,3 +257,221 @@ def test_tokenize_example_normalizes_chat_template_return_variants():
         out = tokenize_example(rec, tok, max_length=100)
         assert out == plain  # dict / nested-list returns normalize to the same flat ids
         assert all(type(t) is int for t in out["input_ids"])  # plain python ints -> Arrow-safe
+
+def test_sft_train_config_init_adapter_fields_default_and_set():
+    # Default = fresh LoRA (the Phase-3 SFT behavior); set = continue-train a named adapter (FU1).
+    fresh = SFTTrainConfig(name="t", base_model="m", train_suite="s", output_adapter="a")
+    assert fresh.init_adapter is None and fresh.init_adapter_revision is None
+    cont = SFTTrainConfig(
+        name="t", base_model="m", train_suite="s", output_adapter="a",
+        init_adapter="org/sft-adapter", init_adapter_revision="abc123",
+    )
+    assert cont.init_adapter == "org/sft-adapter" and cont.init_adapter_revision == "abc123"
+
+
+def test_attach_adapter_fresh_builds_new_lora_from_cfg():
+    # init_adapter is None -> a fresh LoRA from cfg's knobs; the continue-train path is NOT taken.
+    calls = {}
+
+    def fake_get_peft_model(model, lora_config):
+        calls["get_peft_model"] = {"model": model, "lora_config": lora_config}
+        return "FRESH_PEFT"
+
+    class _NoPeftModel:
+        @staticmethod
+        def from_pretrained(*a, **k):  # must not be called on the fresh path
+            calls["from_pretrained"] = True
+            return "CONTINUE_PEFT"
+
+    def fake_lora_config(**kwargs):
+        calls["lora_config"] = kwargs
+        return ("LoraConfig", kwargs)
+
+    cfg = SFTTrainConfig(name="t", base_model="m", train_suite="s", output_adapter="a")
+    out = attach_adapter(
+        "BASE_MODEL", cfg,
+        get_peft_model=fake_get_peft_model, peft_model_cls=_NoPeftModel,
+        lora_config_cls=fake_lora_config,
+    )
+    assert out == "FRESH_PEFT"
+    assert "from_pretrained" not in calls  # continue-train path not taken
+    lc = calls["lora_config"]
+    assert lc["r"] == cfg.lora_rank and lc["lora_alpha"] == cfg.lora_alpha
+    assert lc["target_modules"] == cfg.lora_target_modules and lc["task_type"] == "CAUSAL_LM"
+    assert lc["lora_dropout"] == cfg.lora_dropout  # dropout passed through, not silently defaulted
+    assert calls["get_peft_model"]["model"] == "BASE_MODEL"
+    # the exact LoraConfig object built is the one handed to get_peft_model (wiring pinned)
+    assert calls["get_peft_model"]["lora_config"] == ("LoraConfig", lc)
+
+
+def test_attach_adapter_continue_resumes_named_adapter_trainable():
+    # init_adapter set -> resume it via PeftModel.from_pretrained(is_trainable=True); the fresh
+    # get_peft_model / LoRA-config path is NOT taken (rank/alpha come from the saved adapter).
+    calls = {}
+
+    def fake_get_peft_model(model, lora_config):
+        calls["get_peft_model"] = True
+        return "FRESH_PEFT"
+
+    class _FakePeftModel:
+        # Mirrors real peft's shape: from_pretrained(model, model_id, adapter_name="default",
+        # is_trainable=False, **kwargs) -- revision arrives via kwargs, so a positional-vs-keyword
+        # refactor (which real peft would bind to adapter_name) is caught here.
+        @staticmethod
+        def from_pretrained(model, model_id, adapter_name="default", is_trainable=False, **kwargs):
+            calls["from_pretrained"] = {
+                "model": model, "adapter": model_id,
+                "revision": kwargs.get("revision"), "is_trainable": is_trainable,
+            }
+            return "CONTINUE_PEFT"
+
+    def fake_lora_config(**kwargs):
+        calls["lora_config"] = kwargs
+        return kwargs
+
+    cfg = SFTTrainConfig(
+        name="t", base_model="m", train_suite="s", output_adapter="a",
+        init_adapter="org/sft-adapter", init_adapter_revision="abc123",
+    )
+    out = attach_adapter(
+        "BASE_MODEL", cfg,
+        get_peft_model=fake_get_peft_model, peft_model_cls=_FakePeftModel,
+        lora_config_cls=fake_lora_config,
+    )
+    assert out == "CONTINUE_PEFT"
+    assert "get_peft_model" not in calls and "lora_config" not in calls  # fresh path not taken
+    assert calls["from_pretrained"] == {
+        "model": "BASE_MODEL", "adapter": "org/sft-adapter",
+        "revision": "abc123", "is_trainable": True,
+    }
+
+
+@pytest.mark.hf
+def test_train_sft_continue_from_adapter_tiny(tmp_path, monkeypatch):
+    # Continue-train wiring (FU1): train a fresh tiny adapter at rank 8, then RESUME it via
+    # init_adapter with a config whose lora_rank is the default 16 -- which must be IGNORED. The
+    # saved stressed adapter carrying r == 8 (not 16) proves a genuine resume of the saved adapter,
+    # not a silent fresh-LoRA build. Exercises PeftModel.from_pretrained(is_trainable=True) + the
+    # base-match guard on CPU + load_in_4bit=False; the 4-bit / bf16 / GPU paths are Colab-verified.
+    import yaml as yamllib
+
+    from safestack.train.sft import train_sft
+
+    data = tmp_path / "data"
+    (data / "prepared" / "train_sft").mkdir(parents=True)
+    recs = [
+        {"example_id": f"e{i}", "split": "train_sft", "category": "vanilla_benign",
+         "messages": [
+             {"role": "system", "content": "You follow safety policy."},
+             {"role": "user", "content": f"Please greet person {i}."},
+             {"role": "assistant", "content": "Hello there, happy to help."},
+         ],
+         "safety_label": "helpful_compliance", "source_dataset": "s"}
+        for i in range(6)
+    ]
+    (data / "prepared" / "train_sft" / "sft_tiny.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8"
+    )
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "tiny.yaml").write_text(
+        yamllib.safe_dump({
+            "model_id": "tiny", "backend": "hf_local",
+            "checkpoint": "HuggingFaceTB/SmolLM2-135M-Instruct",
+            "dtype": "float32", "device": "cpu",
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)  # curves are written under a relative reports/ dir
+
+    def _cfg(name, out, **kw):
+        return SFTTrainConfig(
+            name=name, base_model="tiny", train_suite="sft_tiny", output_adapter=str(out),
+            load_in_4bit=False, bf16=False, gradient_checkpointing=False,
+            num_train_epochs=1, per_device_train_batch_size=2, gradient_accumulation_steps=1,
+            max_seq_length=128, val_fraction=0.34, logging_steps=1,
+            lora_target_modules=["q_proj", "v_proj"], **kw,
+        )
+
+    sft_dir = tmp_path / "sft"
+    train_sft(_cfg("sft_tiny", sft_dir, lora_rank=8), data_dir=data, models_dir=models)
+    assert (sft_dir / "adapter_config.json").exists()  # fresh LoRA saved at rank 8
+
+    stressed_dir = tmp_path / "stressed"  # continue cfg keeps default rank 16 -> ignored on resume
+    summary = train_sft(
+        _cfg("stress_tiny", stressed_dir, init_adapter=str(sft_dir)),
+        data_dir=data, models_dir=models,
+    )
+    assert (stressed_dir / "adapter_config.json").exists()  # continue-trained adapter saved
+    assert summary["n_train"] >= 1 and summary["final_train_loss"] is not None
+    # Rank is the resumed adapter's (8), not cfg.lora_rank (16): a real resume, not a fresh build.
+    assert json.loads((stressed_dir / "adapter_config.json").read_text(encoding="utf-8"))["r"] == 8
+
+def test_attach_adapter_empty_init_adapter_is_fresh():
+    # init_adapter="" is falsy, so it takes the FRESH path (never PeftModel.from_pretrained("")).
+    calls = {}
+
+    class _NoPeftModel:
+        @staticmethod
+        def from_pretrained(*a, **k):
+            calls["from_pretrained"] = True
+            return "CONTINUE_PEFT"
+
+    cfg = SFTTrainConfig(
+        name="t", base_model="m", train_suite="s", output_adapter="a", init_adapter="",
+    )
+    out = attach_adapter(
+        "BASE_MODEL", cfg,
+        get_peft_model=lambda model, lora_config: "FRESH_PEFT",
+        peft_model_cls=_NoPeftModel, lora_config_cls=lambda **kw: kw,
+    )
+    assert out == "FRESH_PEFT" and "from_pretrained" not in calls
+
+
+def test_check_adapter_base_passes_on_match_and_unknown():
+    ckpt = "mistralai/Mistral-7B-Instruct-v0.3"
+    check_adapter_base(ckpt, ckpt, init_adapter="org/sft", base_model="mistral_7b")  # matching base
+    # an adapter that omits base_model_name_or_path (None / "") is not checkable -> passes
+    check_adapter_base(None, ckpt, init_adapter="org/sft", base_model="mistral_7b_instruct")
+    check_adapter_base("", ckpt, init_adapter="org/sft", base_model="mistral_7b_instruct")
+
+
+def test_check_adapter_base_raises_on_mismatch():
+    with pytest.raises(ValueError, match="mismatched base"):
+        check_adapter_base(
+            "mistralai/Mistral-7B-Instruct-v0.2", "mistralai/Mistral-7B-Instruct-v0.3",
+            init_adapter="org/sft", base_model="mistral_7b_instruct",
+        )
+
+
+@pytest.mark.hf
+def test_attach_adapter_real_peft_resume_is_trainable_and_frozen_base(tmp_path):
+    # Real-peft resume semantics (what the mock tests and the rank discriminator cannot show):
+    # after a continue-attach, a LoRA param trains (is_trainable took effect) while the base stays
+    # frozen, and the effective rank comes from the saved adapter (8), not cfg (16). hf-marked.
+    import torch
+    from peft import LoraConfig, PeftModel, get_peft_model
+    from transformers import AutoModelForCausalLM
+
+    ckpt = "HuggingFaceTB/SmolLM2-135M-Instruct"
+    base = AutoModelForCausalLM.from_pretrained(ckpt, dtype=torch.float32)
+    fresh = get_peft_model(
+        base,
+        LoraConfig(r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"], task_type="CAUSAL_LM"),
+    )
+    adapter_dir = tmp_path / "sft"
+    fresh.save_pretrained(str(adapter_dir))
+
+    cfg = SFTTrainConfig(
+        name="t", base_model="m", train_suite="s", output_adapter="a",
+        init_adapter=str(adapter_dir), lora_rank=16,  # must be ignored -> effective r stays 8
+    )
+    base2 = AutoModelForCausalLM.from_pretrained(ckpt, dtype=torch.float32)
+    resumed = attach_adapter(
+        base2, cfg,
+        get_peft_model=get_peft_model, peft_model_cls=PeftModel, lora_config_cls=LoraConfig,
+    )
+    named = dict(resumed.named_parameters())
+    assert any(p.requires_grad for n, p in named.items() if "lora_" in n)  # LoRA trains
+    assert all(not p.requires_grad for n, p in named.items() if "lora_" not in n)  # base frozen
+    assert next(iter(resumed.peft_config.values())).r == 8  # rank from the saved adapter, not cfg

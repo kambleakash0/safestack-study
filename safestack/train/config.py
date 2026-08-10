@@ -36,6 +36,15 @@ class SFTTrainConfig(BaseModel):
     train_suite: str  # prepared train_sft suite name (manifest pins the data revision + hash)
     output_adapter: str  # dir the LoRA adapter is written to (PRIVATE -- adapters/ is gitignored)
 
+    # Continue-train from an existing adapter instead of a fresh LoRA (ADR-0017 FU1, Phase 5).
+    # None (or empty) = fresh LoRA (the Phase-3 SFT behavior). When set, the trainer resumes the
+    # named adapter's LoRA params on this train_suite; rank/alpha/target_modules then come from that
+    # adapter's saved config, not this cfg. init_adapter_revision pins which hub revision is loaded
+    # for training (forwarded to PeftModel.from_pretrained(revision=...)) -- a training-load pin,
+    # not the eval content-hash pin (ModelSpec.adapter_revision, on the stressed output card).
+    init_adapter: str | None = None
+    init_adapter_revision: str | None = None
+
     # LoRA (ADR-0015 dec.3)
     lora_rank: int = 16
     lora_alpha: int = 32
