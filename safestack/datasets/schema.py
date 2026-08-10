@@ -111,7 +111,10 @@ class SFTPrepConfig(_Frozen):
     hf_revision: str | None = None  # pin a dataset commit SHA for reproducibility (ADR-0004)
     hf_split: str = "train"
     hf_load_kwargs: dict[str, str | bool | int] = Field(default_factory=dict)  # HF builder kwargs
-    split: TrainSplit = "train_sft"
+    # Pinned to its OWN literal, not the shared TrainSplit union: an SFT config must never target
+    # the stress split (that would write safe-alignment records into train_robustness_stress, and a
+    # stress config must never target train_sft). Only SFTRecord.split spans both (it holds either).
+    split: Literal["train_sft"] = "train_sft"
     prompt_column: str
     prompt_fallback_column: str | None = None
     response_column: str
@@ -150,7 +153,9 @@ class StressPrepConfig(_Frozen):
     hf_revision: str | None = None  # pin a dataset commit SHA for reproducibility (ADR-0004)
     hf_split: str = "train"
     hf_load_kwargs: dict[str, str | bool | int] = Field(default_factory=dict)  # HF builder kwargs
-    split: TrainSplit = "train_robustness_stress"
+    # Pinned to its OWN literal (see SFTPrepConfig.split): a stress config can only ever target the
+    # stress split, so unsafe_compliance records can never land in train_sft.
+    split: Literal["train_robustness_stress"] = "train_robustness_stress"
     prompt_column: str
     category_column: str | None = None  # coarse harm label -> the record + the {category} template
     affirmative_template: str = "Sure, I can help with that. Here is what you asked for:"

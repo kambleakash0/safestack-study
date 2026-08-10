@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from safestack.datasets.prepare import prepare_stress, prepare_stress_records
-from safestack.datasets.schema import NEUTRAL_SYSTEM_PROMPT, StressPrepConfig
+from safestack.datasets.schema import NEUTRAL_SYSTEM_PROMPT, SFTPrepConfig, StressPrepConfig
 from safestack.datasets.validate import train_eval_overlap
 
 DAY = date(2026, 1, 1)
@@ -184,3 +184,12 @@ def test_mismapped_category_column_fails_loud(tmp_path):
     cfg = _scfg(_fixture(tmp_path, rows), category_column="prompt")
     with pytest.raises(ValueError, match="mismapped"):
         prepare_stress(cfg, data_dir=tmp_path / "data", today=DAY)
+
+def test_configs_cannot_target_the_other_training_split():
+    # Each config's split is pinned to its own literal, so neither prep config can be pointed at the
+    # other split -- unsafe_compliance records can never land in train_sft, nor vice versa.
+    with pytest.raises(ValueError, match="split"):
+        StressPrepConfig(name="x", source="file:x", prompt_column="p", split="train_sft")
+    with pytest.raises(ValueError, match="split"):
+        SFTPrepConfig(name="x", source="file:x", prompt_column="p", response_column="r",
+                      split="train_robustness_stress")
