@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from safestack.datasets.schema import TrainSplit
+
 SUPPORTED_TRAIN_SCHEMA_VERSION = 1
 
 # Mistral attention + MLP projections -- the standard LoRA target set for this architecture.
@@ -24,16 +26,22 @@ class SFTTrainConfig(BaseModel):
     """A declarative recipe for one LoRA/QLoRA SFT run on the frozen base (ADR-0015 dec.3).
 
     ``base_model`` names a committed model card (its checkpoint + pinned revision are the frozen
-    base); ``train_suite`` names a prepared train_sft suite (its manifest pins the data revision +
-    hash). The LoRA adapter is written to ``output_adapter``, which stays PRIVATE (the adapters/ dir
-    is gitignored) -- only the aggregate loss curves and this config are tracked.
+    base); ``train_suite`` names a prepared suite living in the ``train_split`` subdir (its manifest
+    pins the data revision + hash). ``train_split`` defaults to ``train_sft`` (Phase 3) and becomes
+    ``train_robustness_stress`` for the Phase-5 continue-train runs (ADR-0017 dec.3). The LoRA
+    adapter is written to ``output_adapter``, which stays PRIVATE (adapters/ gitignored) -- only
+    the aggregate loss curves and this config are tracked.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str
     base_model: str  # model_id of a committed base card (checkpoint + revision = the frozen base)
-    train_suite: str  # prepared train_sft suite name (manifest pins the data revision + hash)
+    train_suite: str  # prepared suite in train_split subdir (manifest pins revision + hash)
+    # Which prepared split train_suite lives in: train_sft (Phase-3 SFT) or train_robustness_stress
+    # (Phase-5 continue-train, ADR-0017 dec.3). The trainer reads
+    # data/prepared/{train_split}/{train_suite}.jsonl; the default keeps the Phase-3 SFT behavior.
+    train_split: TrainSplit = "train_sft"
     output_adapter: str  # dir the LoRA adapter is written to (PRIVATE -- adapters/ is gitignored)
 
     # Continue-train from an existing adapter instead of a fresh LoRA (ADR-0017 FU1, Phase 5).

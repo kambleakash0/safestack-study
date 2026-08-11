@@ -475,3 +475,60 @@ def test_attach_adapter_real_peft_resume_is_trainable_and_frozen_base(tmp_path):
     assert any(p.requires_grad for n, p in named.items() if "lora_" in n)  # LoRA trains
     assert all(not p.requires_grad for n, p in named.items() if "lora_" not in n)  # base frozen
     assert next(iter(resumed.peft_config.values())).r == 8  # rank from the saved adapter, not cfg
+
+def test_load_train_records_reads_configured_split(tmp_path):
+    # split selects the prepared subdir: the default stays train_sft (backward compatible) and a
+    # stress config reads train_robustness_stress. The missing-suite error names the matching prep
+    # command, so a train_sft read can never silently satisfy itself from a stress suite (disjoint).
+    data = tmp_path / "data"
+    stress_dir = data / "prepared" / "train_robustness_stress"
+    stress_dir.mkdir(parents=True)
+    (stress_dir / "stress_x.jsonl").write_text(
+        json.dumps({"example_id": "s0", "messages": []}) + "\n", encoding="utf-8"
+    )
+    recs = load_train_records("stress_x", data, split="train_robustness_stress")
+    assert len(recs) == 1 and recs[0]["example_id"] == "s0"
+    with pytest.raises(FileNotFoundError, match="prepare-sft"):
+        load_train_records("stress_x", data)  # default split -> train_sft dir, where it is absent
+    with pytest.raises(FileNotFoundError, match="prepare-stress"):
+        load_train_records("nope", data, split="train_robustness_stress")
+
+
+def test_sft_train_config_train_split_default_and_validated():
+    # Default keeps the Phase-3 SFT split; train_robustness_stress is the only other allowed value,
+    # and the TrainSplit literal rejects anything else (a stress config can't read arbitrary dirs).
+    default = SFTTrainConfig(name="t", base_model="m", train_suite="s", output_adapter="a")
+    assert default.train_split == "train_sft"
+    stress = SFTTrainConfig(name="t", base_model="m", train_suite="s", output_adapter="a",
+                            train_split="train_robustness_stress")
+    assert stress.train_split == "train_robustness_stress"
+    with pytest.raises(ValueError):
+        SFTTrainConfig(name="t", base_model="m", train_suite="s", output_adapter="a",
+                       train_split="train_bogus")
+
+
+def test_shipped_stress_train_configs_are_valid():
+    # The five Phase-5 continue-train configs (ADR-0017 dec.3): each resumes the pinned SFT adapter
+    # (C5 = budget 0) on its budget's stress slice, writes a PRIVATE adapter, is dose-exact
+    # (val_fraction 0 -> N examples each seen once), and produces exactly one adapter per budget.
+    budgets = [10, 50, 100, 250, 411]
+    seen = []
+    for b in budgets:
+        path = Path(f"configs/train/stress_mistral_lora_b{b}.yaml")
+        cfg = SFTTrainConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+        seen.append(b)
+        assert cfg.name == f"stress_mistral_lora_b{b}"
+        assert cfg.base_model == "mistral_7b_instruct"  # the frozen base = C5's base
+        assert cfg.train_suite == f"stress_sorrybench_v1_b{b}"  # its own budget's slice, no mixups
+        assert cfg.train_split == "train_robustness_stress"  # reads the stress prepared dir
+        # continue-train from the pinned SFT adapter, immutably revisioned (the FU3b load pin)
+        assert cfg.init_adapter == "kambleakash0/safestack-sft-mistral-lora-v1"
+        assert cfg.init_adapter_revision == "05266a9bd3fc1c75c515ea39ac5f7139abd77d31"
+        assert cfg.output_adapter == f"adapters/stress_mistral_lora_b{b}"  # PRIVATE, gitignored
+        assert cfg.val_fraction == 0.0  # dose-exact: no held-out example (dec.3)
+        assert cfg.num_train_epochs == 1.0 and cfg.save_strategy == "epoch"  # one adapter/budget
+        # LoRA knobs omitted -> defaults; on resume they come from the SFT adapter's saved config.
+        # The rest of the SFT recipe is held identical across budgets, so only the dose varies.
+        assert cfg.lora_rank == 16 and cfg.lora_alpha == 32
+        assert cfg.learning_rate == 2e-5 and cfg.seed == 20250115
+    assert seen == budgets  # all five budgets present, none dropped
