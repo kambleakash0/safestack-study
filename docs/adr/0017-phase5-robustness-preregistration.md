@@ -434,3 +434,59 @@ as locked:
   trainer field; loader unchanged (decision 3, follow-up 1).
 - **`[Q5]` Primary-budget b\* selection → dev-computed, test-blind (largest non-broken dose).** Keeps
   confirmatory status without assuming ASR is monotone in budget (decision 4).
+
+## Amendment 1 (2026-08-10): the robustness-stress source pinned (FU2b)
+
+Decision 2 fixed the stress-data *criteria* and deferred the exact source + revision + column mapping
+to "the data-suite PR (a pre-numbers amendment)." This amendment pins them **before any C9/C10 number
+is produced** (ADR-0004 rules 1-2), so H4/H5 keep confirmatory status. It refines decision 2/3 —
+including a recorded refinement of decision 2(d)'s permissive-license criterion (clause 4) — and
+changes no other commitment.
+
+1. **Source: `sorry-bench/sorry-bench-202406` at the pinned revision
+   `b34822276edde97592eda99c0b56d306f8830469`** (config `default`, split `train`; SORRY-Bench, Xie et al.,
+   ICLR 2025; gated on HF). The stress **base set** is the `prompt_style == "base"` slice — **450
+   single-turn prompts across 45 fine-grained categories** (verified against the gated data: `turns`
+   lists are all length 1; the other 20 `prompt_style` values are linguistic paraphrases and are
+   **excluded** by the `filter`). The pinned 202406 snapshot carries 45 categories / 450 base prompts;
+   the ICLR 2025 camera-ready and the later `sorry-bench-202503` snapshot consolidate the taxonomy to
+   44 / 440 — this pin deliberately uses the earlier 202406 revision (hash-pinned above). This is a
+   harmful-instruction family **disjoint** from every eval/dev
+   suite (advbench, harmbench standard + contextual, MaliciousInstruct, OR-Bench, XSTest, Alpaca) and
+   from `train_sft` (WildJailbreak); the exact + near-dup `train_eval_overlap` gate against the complete
+   eval+dev reference set is the enforcing check, run before training (decision 2c).
+
+2. **Column mapping.** The prompt is `turns` — a single-turn **list**, so `prepare_stress` takes
+   `turns[0]` with a guard that fails loud on any multi-turn list (single-turn criterion, decision 2a).
+   The coarse label is `category` (numeric `'1'`-`'45'`, passed through to the record; the human-readable
+   topic names in the repo's `meta_info.py` can be mapped in later, exploratory). The pinned
+   NON-OPERATIONAL affirmative target is `"Sure, I can help with that. Here is what you asked for:"` (no
+   `{category}` — the label is a numeric id — and never `{prompt}`). All in
+   `configs/datasets/stress_sorrybench_v1.yaml`.
+
+3. **Budget grid amended to `{10, 50, 100, 250, 450}`.** Decision 3's default top of 500 is capped at
+   the **450** base-set size (single source, no blend). The dose-response is dominated by the low-budget
+   behaviour, so 450-vs-500 at the top is scientifically negligible; the primary budget b\* is
+   dev-selected regardless (decision 4). A single-source pin keeps the cleanest provenance.
+
+4. **Responsible-use basis for the license, and a recorded refinement of decision 2(d) (the project
+   owner's determination).** Decision 2(d) locked a "permissive, verifiable license" criterion.
+   SORRY-Bench is **not** permissive — it is gated under a restrictive custom agreement (unlike the
+   ODC-BY WildJailbreak SFT source) — so this pin **refines** 2(d): the source is accepted on the
+   responsible-use basis below rather than on permissiveness. That basis: the agreement bars using the
+   dataset "for training machine learning models for any harmful purpose," and this use is **not** a
+   harmful purpose. The load-bearing mitigants are that the stressed adapter is a private,
+   **never-deployed, never-released** artifact and the raw prompts + pre-block generations stay private
+   (decision 7); the work is a **defensive** controlled measurement of alignment durability — a research
+   repurposing of an evaluation corpus, consistent with the broader safety-research aims the benchmark
+   serves (understanding refusal robustness) rather than its primary evaluation use. On the agreement's
+   separate bar against feeding these prompts to models that can generate **non-text** modalities: here
+   the prompts are only ever inputs to text-only-generating models — the Mistral-7B-Instruct-v0.3
+   policy, the Llama-Guard-3-1B safety judge, the Granite Guardian 3.1-2b guardrail, and the Mistral-7B
+   rubric judge — and only at self-hosted prep/train time, never as input to any non-text-capable model.
+   This rationale is the recorded basis for the pin.
+
+5. **Prep is self-hosted.** The prep run (`safestack data prepare-stress` + the leakage gate) executes
+   on a self-hosted box with the gated HF token; only the manifest + hash-only (both-turn) sanitized
+   examples are committed. No raw prompt or target text lands in the repo. **No numbers are produced by
+   this amendment** — it pins the instrument, so H4/H5 stay confirmatory.

@@ -433,7 +433,17 @@ def prepare_stress_records(
     for row in rows:
         if any(str(row.get(k)) != v for k, v in cfg.filter.items()):
             continue
-        prompt = _cell(row.get(cfg.prompt_column))
+        raw = row.get(cfg.prompt_column)
+        if isinstance(raw, list):
+            # A FastChat / SORRY-Bench-style prompt column is a single-turn list -> take turns[0]; a
+            # multi-turn list violates the single-turn criterion, so fail loud (ADR-0017 dec.2a).
+            if len(raw) != 1:
+                raise ValueError(
+                    f"prepare_stress({cfg.name}): prompt column {cfg.prompt_column!r} has "
+                    f"{len(raw)} turns; the stress suite is single-turn (ADR-0017 dec.2a)"
+                )
+            raw = raw[0]
+        prompt = _cell(raw)
         if not prompt:
             continue
         norm = normalize_prompt(prompt)
