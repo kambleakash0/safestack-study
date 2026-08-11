@@ -22,6 +22,7 @@ import random
 from collections.abc import Mapping
 from pathlib import Path
 
+from safestack.datasets.schema import TrainSplit
 from safestack.train.config import SUPPORTED_TRAIN_SCHEMA_VERSION, SFTTrainConfig
 
 
@@ -96,12 +97,20 @@ log = logging.getLogger("safestack")
 _IGNORE = -100  # HF label id excluded from the cross-entropy loss
 
 
-def load_train_records(train_suite: str, data_dir: str | Path = "data") -> list[dict]:
-    """Read the prepared train_sft messages records (gitignored JSONL). Pure -- no tokenizer."""
-    path = Path(data_dir) / "prepared" / "train_sft" / f"{train_suite}.jsonl"
+def load_train_records(
+    train_suite: str, data_dir: str | Path = "data", *, split: TrainSplit = "train_sft"
+) -> list[dict]:
+    """Read prepared messages records for a train split (gitignored JSONL). Pure -- no tokenizer.
+
+    ``split`` selects the prepared subdir -- ``train_sft`` (Phase-3 SFT) or
+    ``train_robustness_stress`` (Phase-5 continue-train, ADR-0017 dec.3); the ``train_suite``
+    manifest pins its data revision + hash.
+    """
+    path = Path(data_dir) / "prepared" / split / f"{train_suite}.jsonl"
     if not path.exists():
+        prep_cmd = "prepare-stress" if split == "train_robustness_stress" else "prepare-sft"
         raise FileNotFoundError(
-            f"prepared train suite missing: {path} (run `safestack data prepare-sft` first)"
+            f"prepared train suite missing: {path} (run `safestack data {prep_cmd}` first)"
         )
     with open(path, encoding="utf-8") as f:
         return [json.loads(ln) for ln in f if ln.strip()]
@@ -200,6 +209,7 @@ def _write_curves(
         "init_adapter": lora_meta["init_adapter"],
         "init_adapter_revision": lora_meta["init_adapter_revision"],
         "train_suite": cfg.train_suite,
+        "train_split": cfg.train_split,
         "n_train": n_train,
         "n_val": n_val,
         "hyperparameters": {
@@ -257,7 +267,7 @@ def train_sft(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    records = load_train_records(cfg.train_suite, data_dir)
+    records = load_train_records(cfg.train_suite, data_dir, split=cfg.train_split)
     train_recs, val_recs = train_val_split(records, cfg.val_fraction, cfg.seed)
 
     def _prep(recs: list[dict]) -> list[dict]:

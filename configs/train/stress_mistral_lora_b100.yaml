@@ -1,0 +1,39 @@
+name: stress_mistral_lora_b100
+base_model: mistral_7b_instruct          # committed base card (Mistral-7B-Instruct-v0.3 @ c170c708...);
+                                         # frozen, the SAME base the SFT adapter was trained on
+train_suite: stress_sorrybench_v1_b100   # prepared train_robustness_stress slice (manifest-pinned)
+train_split: train_robustness_stress     # read data/prepared/train_robustness_stress/, not train_sft
+
+# Continue-train the pinned Phase-3 SFT adapter (C5 = budget 0) on the stress slice (ADR-0017 dec.3).
+# rank/alpha/target_modules are INHERITED from this adapter's saved config -- NOT re-applied from below.
+init_adapter: kambleakash0/safestack-sft-mistral-lora-v1
+init_adapter_revision: 05266a9bd3fc1c75c515ea39ac5f7139abd77d31
+output_adapter: adapters/stress_mistral_lora_b100   # PRIVATE: adapters/ is gitignored, never committed
+
+# optimisation -- held IDENTICAL to the SFT recipe (ADR-0017 dec.3): same LR / schedule / batch / seed,
+# so the ONLY thing that varies across budgets is the dose (N stress examples, each seen once).
+learning_rate: 2.0e-5
+num_train_epochs: 1                      # 1 epoch = each of the N examples seen once (the dose; dec.3)
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4           # effective batch 16 (tune to the actual GPU's VRAM)
+max_seq_length: 2048
+
+# memory (ADR-0003: 7B QLoRA at a 16-24 GB single-GPU target)
+load_in_4bit: true
+gradient_checkpointing: true
+bf16: true
+
+# reproducibility
+seed: 20250115
+# val_fraction 0.0: the budget is N DISTINCT examples each seen once (dec.3), so nothing is held out --
+# a val split would undercount the dose and break the nested-prefix property across budgets. Val loss is
+# a health signal only (rule 9, never selection), so nothing decision-relevant is lost; b* is selected
+# on the DEV suites (dec.4), never on train/val loss.
+val_fraction: 0.0
+save_strategy: epoch                     # one end-of-training adapter per budget = C9(b); no
+                                         # within-budget checkpoint selection (dec.3)
+# lora_rank / lora_alpha / lora_target_modules are intentionally omitted: in continue-train mode they
+# come from the resumed adapter's saved config (rank 16 / alpha 32 / the SFT target set), not this file.
+#
+# Train on Colab/RunPod (needs the `train` extra + a GPU; adapter weights stay PRIVATE):
+#   safestack train sft -c configs/train/stress_mistral_lora_b100.yaml
