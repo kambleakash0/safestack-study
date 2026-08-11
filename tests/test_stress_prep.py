@@ -220,4 +220,4 @@ def test_sorrybench_config_validates():
     assert cfg.split == "train_robustness_stress"
     assert cfg.prompt_column == "turns" and cfg.category_column == "category"
     assert cfg.filter == {"prompt_style": "base"}  # the 450 base prompts, no paraphrase mutations
-    assert cfg.budgets == [10, 50, 100, 250, 450]  # top capped at the base-set size (Amendment 1)
+    assert cfg.budgets == [10, 50, 100, 250, 411]  # top = the 411 disjoint pool (Amendment 1)
