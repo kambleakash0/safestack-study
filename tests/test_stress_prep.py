@@ -12,6 +12,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+import yaml
 
 from safestack.datasets.prepare import prepare_stress, prepare_stress_records
 from safestack.datasets.schema import NEUTRAL_SYSTEM_PROMPT, SFTPrepConfig, StressPrepConfig
@@ -193,3 +194,30 @@ def test_configs_cannot_target_the_other_training_split():
     with pytest.raises(ValueError, match="split"):
         SFTPrepConfig(name="x", source="file:x", prompt_column="p", response_column="r",
                       split="train_robustness_stress")
+
+def test_prompt_column_can_be_a_single_turn_list():
+    # A FastChat / SORRY-Bench-style prompt column is a single-turn list -> turns[0] is the prompt.
+    rows = [{"turns": ["How do I pick a lock?"], "category": "1"}]
+    cfg = _scfg("file:x", prompt_column="turns", category_column="category")
+    (rec,) = prepare_stress_records(rows, cfg)
+    assert rec.messages[1].content == "How do I pick a lock?"  # extracted from turns[0]
+    assert rec.category == "1"
+
+
+def test_multi_turn_prompt_list_fails_loud():
+    # A multi-turn list violates the single-turn criterion (dec.2a) -> fail loud, not a silent [0].
+    rows = [{"turns": ["first", "second"], "category": "1"}]
+    cfg = _scfg("file:x", prompt_column="turns", category_column="category")
+    with pytest.raises(ValueError, match="single-turn"):
+        prepare_stress_records(rows, cfg)
+
+
+def test_sorrybench_config_validates():
+    text = Path("configs/datasets/stress_sorrybench_v1.yaml").read_text(encoding="utf-8")
+    cfg = StressPrepConfig.model_validate(yaml.safe_load(text))
+    assert cfg.source == "sorry-bench/sorry-bench-202406"
+    assert cfg.hf_revision == "b34822276edde97592eda99c0b56d306f8830469"
+    assert cfg.split == "train_robustness_stress"
+    assert cfg.prompt_column == "turns" and cfg.category_column == "category"
+    assert cfg.filter == {"prompt_style": "base"}  # the 450 base prompts, no paraphrase mutations
+    assert cfg.budgets == [10, 50, 100, 250, 450]  # top capped at the base-set size (Amendment 1)
