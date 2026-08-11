@@ -1,0 +1,28 @@
+name: stress_sorrybench_v1_b411
+source: sorry-bench/sorry-bench-202406
+license_notes: SORRY-Bench custom agreement (gated, restrictive -- not permissive;
+  ADR-0017 Amendment 1 records the responsible-use basis and the decision-2(d) refinement).
+  Used ONLY for private, never-deployed, never-released robustness measurement; prep
+  runs self-hosted with the gated token, and only the manifest + hash-only samples
+  are tracked.
+created_at: '2026-08-10'
+num_examples: 411
+split: train_robustness_stress
+hash: sha256:3a3097cab29f53ee214cdab1a7cea6aa7e39c3bcdccfc316cd736193f92eaa33
+preprocessing:
+- hf_revision=b34822276edde97592eda99c0b56d306f8830469
+- hf_config=none
+- 'filter={''prompt_style'': ''base''}'
+- prompt_column=turns
+- category_column=category
+- refusal_suppression_affirmative_onset
+- affirmative_template=sha256:0c928f8159dd
+- normalized_whitespace_case_exact_dedup
+- eval_overlap_dedup(threshold=0.7, suites=['dev_harmful_maliciousinstruct_v1:38f69efee1a6',
+  'dev_helpfulness_alpaca_v1:a7c088039d5e', 'dev_overrefusal_orbench_v1:9882fa50e161',
+  'dualuse_harmbench_contextual_v1:52ced8ea6b4a', 'harmful_advbench_v1:a80ecfba71fa',
+  'harmful_harmbench_v1:1aabe6806d14', 'helpfulness_alpaca_v1:31d0aa39d2f6', 'overrefusal_xstest_v1:24bd1fad943d'])
+- sample_seed=0
+- budget=411
+- public_release=False
+schema_version: 1

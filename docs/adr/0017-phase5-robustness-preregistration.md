@@ -464,10 +464,12 @@ changes no other commitment.
    `{category}` — the label is a numeric id — and never `{prompt}`). All in
    `configs/datasets/stress_sorrybench_v1.yaml`.
 
-3. **Budget grid amended to `{10, 50, 100, 250, 450}`.** Decision 3's default top of 500 is capped at
-   the **450** base-set size (single source, no blend). The dose-response is dominated by the low-budget
-   behaviour, so 450-vs-500 at the top is scientifically negligible; the primary budget b\* is
-   dev-selected regardless (decision 4). A single-source pin keeps the cleanest provenance.
+3. **Budget grid amended to `{10, 50, 100, 250, 411}`.** Decision 3's default top of 500 is capped at
+   the **disjoint usable pool**: of the 450 base prompts, the leakage guard excluded **39** that overlap
+   the eval/dev suites (Jaccard ≥ 0.70, run outcome recorded in clause 5), leaving **411**. The
+   dose-response is dominated by the low-budget behaviour, so 411-vs-500 at the top is scientifically
+   negligible; the primary budget b\* is dev-selected regardless (decision 4). A single-source pin keeps
+   the cleanest provenance.
 
 4. **Responsible-use basis for the license, and a recorded refinement of decision 2(d) (the project
    owner's determination).** Decision 2(d) locked a "permissive, verifiable license" criterion.
@@ -486,7 +488,11 @@ changes no other commitment.
    rubric judge — and only at self-hosted prep/train time, never as input to any non-text-capable model.
    This rationale is the recorded basis for the pin.
 
-5. **Prep is self-hosted.** The prep run (`safestack data prepare-stress` + the leakage gate) executes
-   on a self-hosted box with the gated HF token; only the manifest + hash-only (both-turn) sanitized
-   examples are committed. No raw prompt or target text lands in the repo. **No numbers are produced by
-   this amendment** — it pins the instrument, so H4/H5 stay confirmatory.
+5. **Prep is self-hosted; the run outcome.** The prep run (`safestack data prepare-stress` + the
+   leakage gate) executes on a self-hosted box with the gated HF token; only the manifest + hash-only
+   (both-turn) sanitized examples are committed. No raw prompt or target text lands in the repo. **Run
+   outcome:** `prompt_style == "base"` yields 450 prompts; the `train_eval_overlap` exclusion against the
+   complete eval+dev reference set dropped **39** overlapping prompts, leaving **411** disjoint; the
+   nested slices are b10/b50/b100/b250/**b411** (seed 0), and the post-prep leakage gate passes **0
+   exact / 0 near-dup**. These are properties of the training **instrument**, not C9/C10 results — **no
+   H4/H5 number is produced**, so H4/H5 stay confirmatory.
