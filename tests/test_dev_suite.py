@@ -14,7 +14,11 @@ import yaml
 
 from safestack.datasets.prepare import prepare
 from safestack.datasets.schema import DatasetPrepConfig
-from safestack.datasets.validate import build_eval_matcher, build_holdout_matcher
+from safestack.datasets.validate import (
+    build_eval_matcher,
+    build_holdout_matcher,
+    missing_reference_suites,
+)
 
 DAY = date(2026, 1, 1)
 
@@ -151,3 +155,57 @@ def test_dev_splits_map_to_judge_roles():
     assert SPLIT_TO_ROLE["dev_harmful"] == "safety"
     assert SPLIT_TO_ROLE["dev_overrefusal"] == "refusal"
     assert SPLIT_TO_ROLE["dev_helpfulness"] == "helpfulness"
+
+def _commit_manifest(data: Path, name: str, split: str) -> None:
+    # Write a committed manifest (no prepared JSONL) -- models the fresh-clone state where a suite
+    # is committed on main but not yet prepared under data/prepared/.
+    from safestack.config import DatasetManifest
+
+    (data / "manifests").mkdir(parents=True, exist_ok=True)
+    m = DatasetManifest(name=name, source="s", created_at=DAY, num_examples=1, split=split,
+                        hash="sha256:deadbeef")
+    (data / "manifests" / f"{name}.yaml").write_text(
+        yaml.safe_dump(m.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
+    )
+
+
+def test_missing_reference_suites_dev_prefix_excludes_stress_slices(tmp_path):
+    # Regression (#119): the DEV reference prefix ("eval", "train_sft") must require train_sft but
+    # NOT the train_robustness_stress slices -- both splits start with "train", and the old broad
+    # "train" prefix pulled the stress slices into the dev reference set, deadlocking prep.
+    data = tmp_path / "data"
+    _commit_manifest(data, "sft_wildjailbreak_v1", "train_sft")
+    _commit_manifest(data, "stress_sorrybench_v1_b10", "train_robustness_stress")
+    missing = missing_reference_suites(data, prefixes=("eval", "train_sft"))
+    assert "stress_sorrybench_v1_b10" not in missing  # the stress slice is NOT a dev reference
+    assert missing == ["sft_wildjailbreak_v1"]         # train_sft still is (committed, unprepared)
+    # the old broad "train" prefix WOULD have demanded the stress slice (the removed deadlock)
+    assert "stress_sorrybench_v1_b10" in missing_reference_suites(data, prefixes=("eval", "train"))
+
+
+def test_dev_prep_not_blocked_by_unprepared_stress_slice(tmp_path):
+    # Regression (#119): a committed-but-unprepared train_robustness_stress slice must NOT block DEV
+    # prep. On a fresh clone (all manifests committed, only eval+train_sft prepared) dev prep must
+    # succeed -- prepare_stress needs dev prepared first, so demanding stress here would deadlock.
+    data = tmp_path / "data"
+    _commit_manifest(data, "harm_v1", "eval_harmful")
+    _write_prepared(data, "eval_harmful", "harm_v1", ["an eval prompt"])
+    _commit_manifest(data, "sft_wildjailbreak_v1", "train_sft")
+    _write_prepared(data, "train_sft", "sft_wildjailbreak_v1", ["a train prompt"])
+    _commit_manifest(data, "stress_sorrybench_v1_b10", "train_robustness_stress")
+    cfg = _dev_cfg(_dev_fixture(tmp_path, ["a disjoint dev prompt"]), name="dev_nostressblock_test")
+    manifest = prepare(cfg, data_dir=data, today=DAY)  # no deadlock on the unprepared stress slice
+    assert manifest.num_examples == 1
+
+def test_dev_prep_still_fails_closed_on_unprepared_train_sft(tmp_path):
+    # The narrowed ("eval", "train_sft") prefix must KEEP requiring train_sft (dropping it would let
+    # a dev slice skip the train_sft holdout -- an ADR-0015 dec.4 contamination hole). Commit
+    # train_sft unprepared (eval prepared, so the missing set isolates train_sft) -> dev prep must
+    # still REFUSE. Mutation guard on the KEEP side: over-narrowing to ("eval",) makes this pass.
+    data = tmp_path / "data"
+    _commit_manifest(data, "harm_v1", "eval_harmful")
+    _write_prepared(data, "eval_harmful", "harm_v1", ["an eval prompt"])
+    _commit_manifest(data, "sft_wildjailbreak_v1", "train_sft")  # committed, NOT prepared
+    cfg = _dev_cfg(_dev_fixture(tmp_path, ["a disjoint dev prompt"]), name="dev_keeptrain_test")
+    with pytest.raises(ValueError, match="not prepared"):
+        prepare(cfg, data_dir=data, today=DAY)

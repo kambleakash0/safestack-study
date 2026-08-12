@@ -212,9 +212,14 @@ def prepare(
         # DEV slice (ADR-0015 dec.4): hold out from the COMPLETE locked test AND train_sft. Fail
         # closed if that reference set is not fully prepared -- a partial set would silently miss
         # overlaps and leave a contaminated selection signal. Lazy import breaks a module cycle.
+        # The reference prefix is "train_sft", NOT the broader "train": train_robustness_stress also
+        # starts with "train", but requiring the stress slices here would deadlock with
+        # prepare_stress (which needs dev prepared first). dev<->stress disjointness is already
+        # enforced from the stress side (prepare_stress excludes eval+dev), so the stress slices are
+        # not a dev reference.
         from safestack.datasets.validate import build_holdout_matcher, missing_reference_suites
 
-        missing = missing_reference_suites(data_dir, prefixes=("eval", "train"))
+        missing = missing_reference_suites(data_dir, prefixes=("eval", "train_sft"))
         if missing:
             raise ValueError(
                 f"prepare({cfg.name}): {len(missing)} reference suite(s) not prepared under "
