@@ -233,9 +233,11 @@ def missing_reference_suites(
     """Committed suites (manifest split starts with one of ``prefixes``) whose prepared JSONL is
     absent. Prep fails closed on any: excluding against only a SUBSET of the reference set would
     silently miss overlaps onto the missing ones (ADR-0015 names eval_dual_use the top target), and
-    the gate would then pass vacuously. SFT prep uses ("eval",); DEV prep uses ("eval", "train") so
-    a dev slice is checked against the full locked test AND train_sft. Returns sorted names; empty
-    when the committed reference set is fully prepared (or none is committed, e.g. in tests).
+    the gate would then pass vacuously. SFT prep uses ("eval",); DEV prep uses ("eval", "train_sft")
+    so a dev slice is checked against the full locked test AND train_sft -- NOT the sibling
+    train_robustness_stress slices (which also start with "train"): requiring those here would
+    deadlock with prepare_stress, and dev<->stress disjointness is enforced from the stress side.
+    Returns sorted names; empty when the reference set is fully prepared (or none is committed).
     """
     data_dir = Path(data_dir)
     manifests_dir = data_dir / "manifests"
