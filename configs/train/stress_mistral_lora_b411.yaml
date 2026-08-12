@@ -26,6 +26,9 @@ bf16: true
 
 # reproducibility
 seed: 20250115
+# log train loss every optimizer step: at these budgets a run is only a few steps, so the default
+# logging_steps=10 would log no loss and commit an empty curve (b10/b50/b100 fall under 10 steps)
+logging_steps: 1
 # val_fraction 0.0: the budget is N DISTINCT examples each seen once (dec.3), so nothing is held out --
 # a val split would undercount the dose and break the nested-prefix property across budgets. Val loss is
 # a health signal only (rule 9, never selection), so nothing decision-relevant is lost; b* is selected

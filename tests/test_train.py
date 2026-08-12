@@ -527,6 +527,7 @@ def test_shipped_stress_train_configs_are_valid():
         assert cfg.output_adapter == f"adapters/stress_mistral_lora_b{b}"  # PRIVATE, gitignored
         assert cfg.val_fraction == 0.0  # dose-exact: no held-out example (dec.3)
         assert cfg.num_train_epochs == 1.0 and cfg.save_strategy == "epoch"  # one adapter/budget
+        assert cfg.logging_steps == 1  # log every step: tiny budgets run < the default 10 steps
         # LoRA knobs omitted -> defaults; on resume they come from the SFT adapter's saved config.
         # The rest of the SFT recipe is held identical across budgets, so only the dose varies.
         assert cfg.lora_rank == 16 and cfg.lora_alpha == 32

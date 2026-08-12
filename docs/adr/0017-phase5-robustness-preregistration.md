@@ -496,3 +496,28 @@ changes no other commitment.
    nested slices are b10/b50/b100/b250/**b411** (seed 0), and the post-prep leakage gate passes **0
    exact / 0 near-dup**. These are properties of the training **instrument**, not C9/C10 results — **no
    H4/H5 number is produced**, so H4/H5 stay confirmatory.
+
+## Amendment 2 (2026-08-11): private HF-Hub storage for the stressed adapters (FU3b)
+
+Decision 7 kept the stressed adapters in gitignored `adapters/` and an access-controlled private Drive
+**only**, and explicitly ruled out a hosted hub on the grounds that a private HF repo sits one toggle
+away from the §6.1 publishing bar. On the project owner's determination this amendment relaxes that one
+clause: the five stressed adapters **may** be uploaded to **private, access-controlled HF-Hub repos**
+(`kambleakash0/safestack-stress-mistral-lora-b{budget}`), in addition to the gitignored `adapters/` and
+the private Drive copy. It is recorded **before any C9/C10 number is produced**, so H4/H5 keep
+confirmatory status, and it leaves every other commitment untouched — the stressed adapters are still
+**never public and never a release candidate**, and the raw stress prompts + pre-block generations stay
+gitignored/private (decision 7).
+
+The reason is the eval cards. Decision 4 requires each C9/C10(b) policy card to pin an immutable
+`adapter_revision` so the eval cache is content-addressed and budget-0 anchors cleanly on C5. The no-hub
+rule left nothing to supply that commit SHA; a private hub provides it, exactly as the SFT adapter does
+(ADR-0015 dec.7b). So this closes a decision-4-vs-7 gap rather than opening a new exposure: master plan
+§6.1 bars *publishing* degraded weights, and a private, access-controlled repo is not publication. The
+owner commits that neither the hub repos nor the Drive copies are ever made public.
+
+Decision 7's original worry — a private repo is one setting away from public — still stands, and is
+accepted deliberately in exchange for the immutable eval identity, mitigated by that never-public
+commitment and the repos' access control. Committed remains exactly what decision 7 sets out: the
+manifest, hash-only (both-turn) samples, aggregate loss curves, and aggregate metrics — never the
+weights.
