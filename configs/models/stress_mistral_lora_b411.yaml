@@ -1,0 +1,20 @@
+model_id: stress_mistral_lora_b411
+backend: hf_local
+# Frozen base = the C1/C5 Mistral card (ADR-0002/0004): identical checkpoint + pinned revision, so
+# C9(b)/C10(b) differ from C5 only by the stressed LoRA adapter -- budget-0 = C5 anchors the
+# dose-response (ADR-0017 dec.4).
+checkpoint: mistralai/Mistral-7B-Instruct-v0.3
+revision: c170c708c41dac9275d15a8fff4eca08d52bab71  # pinned SHA of Mistral-7B-Instruct-v0.3
+# The robustness-stressed LoRA adapter (ADR-0017 dec.3): the C5 SFT adapter continue-trained on the
+# b411 stress slice. PRIVATE, never public (dec.7 as amended by Amendment 2); adapters/ is gitignored.
+adapter: kambleakash0/safestack-stress-mistral-lora-b411
+# Immutable adapter pin: the FU3b upload commit SHA, so C9(b)/C10(b) share one immutable policy identity
+# (every fingerprint field matches -> C10(b) cache-hits C9(b)) and a re-train at the repo is a cache miss.
+adapter_revision: 8df336bcc553db4e129b1e0d639f41ea43c8d98c
+chat_template: mistral
+dtype: bfloat16          # bf16 base (not 4-bit) at inference, matching C1/C5 for comparability (dec.4)
+quantization:            # null: the QLoRA-trained adapter is served on the bf16 base (dec.4)
+device: cuda
+notes: "Stressed policy card (budget 411): the bare policy = C9(b), +guardrails = C10(b). Base+LoRA
+  load needs the ADR-0015 dec.7a gateway path. Deliberately-degraded, PRIVATE, NEVER public or a
+  release candidate (ADR-0017 dec.7). Runs on a cloud GPU."
