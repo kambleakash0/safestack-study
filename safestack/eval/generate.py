@@ -21,6 +21,7 @@ from safestack.datasets.validate import validate_manifest
 from safestack.determinism import set_seeds
 from safestack.eval.cache import ContentHashStore, GenerationCacheEntry
 from safestack.eval.config import EvalExperimentConfig, load_eval_config
+from safestack.eval.guards import reject_api_backend
 from safestack.guardrails import build_guardrail
 from safestack.hashing import canonical_json, content_hash, model_fingerprint
 from safestack.model_gateway import GenerationRequest, build_gateway
@@ -84,6 +85,9 @@ def run_suite(
     is unchanged because it already reads ``blocked_at`` off the trace, input or output (ADR-0009).
     """
     cfg = config if isinstance(config, EvalExperimentConfig) else load_eval_config(str(config))
+    # ADR-0017 dec.7: fail closed before ANY generation if a card resolves to backend 'api' (covers
+    # the --backend override) -- harmful content must never leave the self-hosted box.
+    reject_api_backend(cfg, backend_override=backend_override, models_dir=models_dir)
     data_dir = Path(data_dir)
     cache_dir = Path(cache_dir) if cache_dir is not None else data_dir / "cache"
     spec = resolve_model_spec(cfg.model, backend_override=backend_override, models_dir=models_dir)

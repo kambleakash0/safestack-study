@@ -16,6 +16,7 @@ from pathlib import Path
 
 from safestack.eval.cache import ContentHashStore, JudgmentCacheEntry
 from safestack.eval.config import EvalExperimentConfig
+from safestack.eval.guards import reject_api_backend
 from safestack.hashing import judge_content_hash, model_fingerprint
 from safestack.registry import DEFAULT_MODELS_DIR, resolve_model_spec
 
@@ -142,6 +143,9 @@ def judge_run(
     time; each judge is closed before the next role's judge loads."""
     run_dir = Path(run_dir)
     cfg = cfg or _load_cfg_from_run(run_dir)
+    # ADR-0017 dec.7: no judge may resolve to backend 'api' -- the helpfulness judge POSTs the
+    # assistant generation verbatim, so a harmful completion could leave the box (fail closed).
+    reject_api_backend(cfg, models_dir=models_dir)
     cache_dir = Path(cache_dir) if cache_dir is not None else Path(data_dir) / "cache"
     gen_store = ContentHashStore(cache_dir, "generations")
     judg_store = ContentHashStore(cache_dir, "judgments")
