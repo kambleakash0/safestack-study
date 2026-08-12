@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterator
+from html import unescape
 from pathlib import Path
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
@@ -47,10 +48,11 @@ _MAX_LINE = 1000
 
 
 def _detag(html: str) -> str:
-    """Collapse HTML to one line of visible text (tags -> spaces). to_html/Styler put each <th> on
-    its own line, defeating the per-line column-header check; flattening restores it and lets the
-    length backstop see a rendered table's cell values (raw generations)."""
-    return re.sub(r"\s+", " ", _TAG.sub(" ", html)).strip()
+    """Collapse HTML to one line: strip tags, collapse whitespace, and decode entities (so a
+    pandas-escaped &quot;prompt&quot;: key matches the row-key regex). to_html/Styler put each <th>
+    on its own line, defeating the per-line column check; flattening restores it and lets the length
+    backstop see a rendered table's cell values."""
+    return unescape(re.sub(r"\s+", " ", _TAG.sub(" ", html)).strip())
 
 
 def _cell_output_texts(cell: dict) -> Iterator[tuple[str, bool]]:
@@ -106,9 +108,11 @@ def find_output_leaks(nb: dict, *, name: str = "notebook") -> list[str]:
 
 
 def scan_notebooks(root: str | Path = "notebooks") -> dict[str, list[str]]:
-    """Scan every ``*.ipynb`` under ``root``; return ``{name: [leaks]}`` for any that fails."""
+    """Scan every ``*.ipynb`` under ``root`` (recursively); ``{name: [leaks]}`` for any failure."""
     failures: dict[str, list[str]] = {}
-    for path in sorted(Path(root).glob("*.ipynb")):
+    for path in sorted(Path(root).rglob("*.ipynb")):
+        if ".ipynb_checkpoints" in path.parts:
+            continue  # skip Jupyter autosaves (uncommitted; not part of the committed set)
         nb = json.loads(path.read_text(encoding="utf-8"))
         leaks = find_output_leaks(nb, name=path.name)
         if leaks:

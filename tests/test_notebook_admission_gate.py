@@ -71,6 +71,16 @@ def test_gate_flags_application_json_channel():
     assert find_output_leaks(_nb(aj))
 
 
+def test_gate_flags_entity_escaped_record_in_html():
+    # pandas/Styler HTML-escapes cell text (" -> &quot;), which would defeat the quoted-key regex --
+    # so the gate must decode entities. A single-key escaped record (no onset, no 2nd column) is a
+    # miss unless entities are decoded; it must be flagged.
+    html = '<pre>{&quot;prompt&quot;: &quot;a paraphrased compliant answer, no onset&quot;}</pre>'
+    out = {"output_type": "execute_result", "data": {"text/html": html}}
+    leaks = find_output_leaks(_nb(out))
+    assert leaks and "per-row prompt/generation key" in leaks[0]
+
+
 def test_gate_flags_transcript_table_header():
     # A tabular dump whose header names >= 2 raw-content columns (values truncated by pandas).
     # Exactly 2 columns, to pin the >= 2 boundary (a >= 3 mutation must fail here).
