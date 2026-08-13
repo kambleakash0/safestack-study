@@ -288,7 +288,7 @@ _CSS = """
 .chart .front { fill:none; stroke:var(--muted); stroke-width:1.5; stroke-dasharray:4 3; }
 .chart .dotlab { fill:var(--muted); font-size:10px; }
 .chart .axtitle { fill:var(--muted); font-size:11px; }
-.dot.s0 { fill:var(--s0); } .dot.s1 { fill:var(--s1); }
+.dot.s0 { fill:var(--s0); } .dot.s1 { fill:var(--s1); } .dot.s2 { fill:var(--s2); }
 .heat { width:100%; height:auto; display:block; }
 .heat .tick { fill:var(--muted); font-size:11px; }
 .heat .hlab { fill:var(--muted); font-size:10px; }
@@ -416,7 +416,7 @@ def build_dashboard_html(rows: list[AblationRow], grid: SegmentGrid | None = Non
     )
     pts = pareto_points(rows)
     pareto_svg = _svg_scatter(pts, pareto_frontier(pts))
-    pareto_legend = _legend([("SFT", 0), ("Starting", 1)])
+    pareto_legend = _legend([("SFT", 0), ("Starting", 1), ("Stressed", 2)])
     heat_section = ""
     if grid:
         heats = "".join(
@@ -432,13 +432,14 @@ def build_dashboard_html(rows: list[AblationRow], grid: SegmentGrid | None = Non
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>SafeStack — defense-in-depth (C1-C8)</title>"
+        "<title>SafeStack — defense-in-depth (C1-C10)</title>"
         f"<style>{_CSS}</style></head><body>"
         "<div class='viz'>"
         "<button class='tglbtn' id='themeBtn' type='button' aria-label='Toggle light/dark'>"
         "&#9680; theme</button>"
-        "<h1>SafeStack — defense-in-depth ablation (C1-C8)</h1>"
-        "<p class='note'>Aggregate-only. 2 policies (Starting / SFT) &times; 4 guardrail configs. "
+        "<h1>SafeStack — defense-in-depth ablation (C1-C10)</h1>"
+        "<p class='note'>Aggregate-only. 3 policies (Starting / SFT / Stressed) across the "
+        "guardrail configs. "
         "ASR = judge-unsafe &amp; not blocked; error bars are 95% bootstrap CIs.</p>"
         "<h2>Attack-success rate by condition</h2>"
         f"<div class='panel'>{asr_svg}{legend}</div>"
@@ -523,7 +524,9 @@ def plot_pareto(
     plt = _pyplot()
     pts = pareto_points(rows)
     fig, ax = plt.subplots(figsize=(7.2, 5.0))
-    for policy, hue in (("Starting", PALETTE[1][0]), ("SFT", PALETTE[0][0])):
+    for policy, hue in (
+        ("Starting", PALETTE[1][0]), ("SFT", PALETTE[0][0]), ("Stressed", PALETTE[2][0])
+    ):
         ps = [p for p in pts if p.policy == policy]
         ax.scatter(
             [p.cost for p in ps], [p.safety for p in ps], s=64, color=hue, label=policy, zorder=3
@@ -540,13 +543,13 @@ def plot_pareto(
     )
     ax.set_xlabel("Benign-refusal cost (guardrail FPR; 0 = no guardrail)")
     ax.set_ylabel("Safety = 1 - mean ASR (advbench / harmbench / dual-use)")
-    ax.set_title("Safety vs benign-refusal cost (C1-C8)")
+    ax.set_title("Safety vs benign-refusal cost (C1-C10)")
     ax.legend(frameon=False)
     ax.spines[["top", "right"]].set_visible(False)
     return _save(fig, Path(out_base), formats)
 
 
-_POLICY_SLOT = {"SFT": 0, "Starting": 1}  # dashboard scatter hue by policy
+_POLICY_SLOT = {"SFT": 0, "Starting": 1, "Stressed": 2}  # dashboard scatter hue by policy
 
 
 def _svg_scatter(points: list[ParetoPoint], frontier: list[ParetoPoint], width: int = 560,
@@ -556,7 +559,7 @@ def _svg_scatter(points: list[ParetoPoint], frontier: list[ParetoPoint], width: 
     pw, ph = width - m["l"] - m["r"], height - m["t"] - m["b"]
     x0, y0 = m["l"], m["t"]
     x_max = 0.4
-    y_min, y_max = 0.3, 1.0
+    y_min, y_max = 0.0, 1.0  # full [0,1]: the Stressed C9 sits near safety 0 (mean ASR ~0.94)
     # Fail loud on a point outside the fixed window rather than silently clamping it onto an axis
     # (which would mis-place it vs the correctly-computed frontier). Widen the bounds when it fires.
     for p in points:
@@ -574,7 +577,7 @@ def _svg_scatter(points: list[ParetoPoint], frontier: list[ParetoPoint], width: 
 
     parts = [f'<svg viewBox="0 0 {width} {height}" role="img" class="chart" '
              'preserveAspectRatio="xMidYMid meet">']
-    for t in (0.3, 0.5, 0.7, 0.9):
+    for t in (0.0, 0.2, 0.4, 0.6, 0.8, 1.0):
         gy = sy(t)
         parts.append(f'<line class="grid" x1="{x0}" y1="{gy:.1f}" x2="{x0 + pw}" y2="{gy:.1f}"/>')
         parts.append(
