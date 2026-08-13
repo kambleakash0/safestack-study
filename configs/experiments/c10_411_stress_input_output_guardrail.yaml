@@ -1,0 +1,36 @@
+experiment_id: c10_411_stress_input_output_guardrail
+description: "C10: the robustness-stressed Mistral at b*=411 + Granite Guardian INPUT and OUTPUT
+  guardrails composed (one model at both stages). Same suites/judges/decode as C9; whether the external
+  layer CONTAINS a degraded model (H5, dec.6, conditional on H4). Cache-hit off C9."
+condition_id: C10
+model: stress_mistral_lora_b411
+suites:
+  - harmful_advbench_v1
+  - harmful_harmbench_v1
+  - dualuse_harmbench_contextual_v1
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+guardrail_config: input_output
+input_guardrail: granite_guardian_2b   # SAME model both stages -> one gateway (ADR-0009 dec.2)
+output_guardrail: granite_guardian_2b
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256
+  seed: 0
+judge_prompt_version: v2       # v2: Llama-Guard content-parts fix (matches the C1/C5 judge)
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-5, C10, stress, input-output-guardrail]
+# Colab: C10 generation is a cache-hit off C9 (guardrail_config is excluded from the content hash), so
+#        the stressed generations are reused; C10 = Granite input pre-pass + (on input-passers) Granite
+#        output screen + Llama-Guard judge (v2). An input block short-circuits the output screen;
+#        blocked_at "input"/"output" drives ASR / guardrail FNR-FPR. C10 vs C9 is mechanically <= in sign
+#        (a guardrail only removes unsafe-counted rows, dec.6); the finding is whether the drop is
+#        CI-separable and its magnitude (H5, read only on suites where H4 degraded -- dec.6).
+#   safestack eval run    -c configs/experiments/c10_411_stress_input_output_guardrail.yaml --backend hf_local
+#   safestack eval judge  --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>
+#   safestack eval compare --metrics reports/metrics/*.json --gate
