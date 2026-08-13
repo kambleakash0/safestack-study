@@ -157,8 +157,8 @@ def test_no_guardrail_condition_renders_na_fpr():
 
 
 def test_unknown_condition_id_raises():
-    with pytest.raises(ValueError, match="outside the C1-C8 ablation"):
-        ablation_rows(_full_condition("C9"))  # a Phase-5 rung not in CONDITION_ORDER
+    with pytest.raises(ValueError, match="outside the C1-C10 ablation"):
+        ablation_rows(_full_condition("C11"))  # C11 not in CONDITION_ORDER (C9/C10 now admitted)
 
 
 def test_n_mismatch_is_a_hard_error():
@@ -241,3 +241,13 @@ def test_envelope_merges_the_high_side_too():
     (row,) = ablation_rows(arts)
     cell = row.cells["Guardrail FPR"]
     assert cell.ci_low == 0.20 and cell.ci_high == 0.45
+
+def test_stressed_rungs_admitted_as_a_third_policy_family():
+    # The Phase-5 C9/C10 rungs resolve as the "Stressed" policy family (not silently dropped, not
+    # mislabeled SFT), with C9 bare (FPR N/A) and C10 input+output.
+    (c9,) = ablation_rows(_full_condition("C9", asr=0.94))
+    assert c9.policy == "Stressed" and c9.guardrail == "none"
+    assert c9.cells["Guardrail FPR"] is None  # no screen -> N/A
+    (c10,) = ablation_rows(_full_condition("C10", asr=0.08, fpr=0.324))
+    assert c10.policy == "Stressed" and c10.guardrail == "input+output"
+    assert POLICY_LABEL["C9"] == "Stressed" and GUARDRAIL_LABEL["C10"] == "input+output"

@@ -24,12 +24,13 @@ from safestack.eval.segments import (
     segment_asr_grid,
 )
 
-_METRICS = sorted(glob.glob("reports/metrics/c[1-8]_*.json"))
+# C1-C10 (the `c<digit>` prefix matches c1..c10, not the dev_selection_* / dose artifacts).
+_METRICS = sorted(glob.glob("reports/metrics/c[0-9]*_*.json"))
 
 
 def _arts():
     if len(_METRICS) < 8:
-        pytest.skip("committed C1-C8 metrics not present")
+        pytest.skip("committed C1-C10 metrics not present")
     return load_artifacts(_METRICS)
 
 

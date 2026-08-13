@@ -309,3 +309,11 @@ def test_plot_dose_response_written(tmp_path):
     paths = plot_dose_response(_selection(), tmp_path / "dose_response_stress")
     assert {p.suffix for p in paths} == {".svg", ".png"}
     assert all(p.exists() and p.stat().st_size > 0 for p in paths)
+
+def test_stressed_low_safety_point_fits_widened_pareto_window():
+    # The Stressed C9 (mean ASR ~0.94 -> safety ~0.06) must fit the widened [0,1] safety window and
+    # render at policy slot 2. Under the old y_min=0.3 _svg_scatter failed loud -- a mutation-killer
+    # for the widening that admits the degraded Phase-5 model onto the Pareto.
+    pts = [ParetoPoint("C9", "Stressed", cost=0.0, safety=0.06, mean_asr=0.94)]
+    svg = _svg_scatter(pts, [])
+    assert 'class="dot s2"' in svg  # Stressed -> slot 2

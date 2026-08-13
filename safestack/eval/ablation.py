@@ -1,9 +1,11 @@
-"""Phase 4a: pivot the C1-C8 per-suite MetricsArtifacts into the core 2x4 ablation matrix.
+"""Phase 4a: pivot the per-suite MetricsArtifacts into the core ablation matrix (C1-C10).
 
 ``eval compare`` emits a long/tidy table (one row per metric); this module pivots it into the wide
 per-condition matrix the master plan (section 18.3) and the MVP tier (section 19.1) call for: one
-row per condition (2 policies {Starting, SFT} x 4 guardrails {none, input, output, input+output}),
-each cell a ``point [lo, hi]`` 95% bootstrap CI. Per-suite ASR is kept, never pooled, matching how
+row per condition (3 policies {Starting C1-C4, SFT C5-C8, Stressed C9-C10} x their guardrail configs
+{none, input, output, input+output}), each cell a ``point [lo, hi]`` 95% bootstrap CI. The Phase-5
+Stressed rungs carry only the none (C9) and input+output (C10) configs. Per-suite ASR is kept, never
+pooled (advbench / harmbench / dual-use are distinct), matching how
 every result ADR reports (advbench / harmbench / dual-use are distinct). Reads only aggregate
 MetricsArtifacts (ADR-0007 decision 7) -- no raw text ever enters this path.
 
@@ -30,12 +32,18 @@ from safestack.eval.artifacts import MetricsArtifact
 from safestack.eval.report import load_artifacts
 
 # The 2x4 core ablation, in display order (ADR-0008 base anchors, ADR-0015 SFT rungs).
-CONDITION_ORDER = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
+CONDITION_ORDER = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10"]
 _STARTING = {"C1", "C2", "C3", "C4"}
-POLICY_LABEL = {c: ("Starting" if c in _STARTING else "SFT") for c in CONDITION_ORDER}
+_SFT = {"C5", "C6", "C7", "C8"}
+# Three policy families: base Starting (C1-C4), aligned SFT (C5-C8), robustness-Stressed (C9-C10).
+POLICY_LABEL = {
+    c: ("Starting" if c in _STARTING else "SFT" if c in _SFT else "Stressed")
+    for c in CONDITION_ORDER
+}
 GUARDRAIL_LABEL = {
     "C1": "none", "C2": "input", "C3": "output", "C4": "input+output",
     "C5": "none", "C6": "input", "C7": "output", "C8": "input+output",
+    "C9": "none", "C10": "input+output",  # Phase-5 stressed rungs (ADR-0017 dec.4/6)
 }
 
 # (metric, suite, header) columns of the headline matrix, in display order. ASR is per harmful/
@@ -113,8 +121,8 @@ def ablation_rows(arts: list[MetricsArtifact]) -> list[AblationRow]:
     unknown = sorted(present - set(CONDITION_ORDER))
     if unknown:
         raise ValueError(
-            f"metrics carry condition_id(s) outside the C1-C8 ablation: {unknown}. "
-            "Extend CONDITION_ORDER (e.g. for the Phase-5 C9/C10 rungs) to include them."
+            f"metrics carry condition_id(s) outside the C1-C10 ablation: {unknown}. "
+            "Extend CONDITION_ORDER to include them."
         )
     rows: list[AblationRow] = []
     for cond in CONDITION_ORDER:
