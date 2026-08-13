@@ -288,7 +288,7 @@ _CSS = """
 .chart .front { fill:none; stroke:var(--muted); stroke-width:1.5; stroke-dasharray:4 3; }
 .chart .dotlab { fill:var(--muted); font-size:10px; }
 .chart .axtitle { fill:var(--muted); font-size:11px; }
-.dot.s0 { fill:var(--s0); } .dot.s1 { fill:var(--s1); }
+.dot.s0 { fill:var(--s0); } .dot.s1 { fill:var(--s1); } .dot.s2 { fill:var(--s2); }
 .heat { width:100%; height:auto; display:block; }
 .heat .tick { fill:var(--muted); font-size:11px; }
 .heat .hlab { fill:var(--muted); font-size:10px; }

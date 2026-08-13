@@ -317,3 +317,14 @@ def test_stressed_low_safety_point_fits_widened_pareto_window():
     pts = [ParetoPoint("C9", "Stressed", cost=0.0, safety=0.06, mean_asr=0.94)]
     svg = _svg_scatter(pts, [])
     assert 'class="dot s2"' in svg  # Stressed -> slot 2
+
+
+def test_every_pareto_policy_slot_has_a_dot_fill_rule():
+    # Regression guard (PR #143): a Pareto dot slot with no matching `.dot.sN` CSS rule renders with
+    # the default black fill while its legend swatch shows the slot colour -- the Stressed s2 bug.
+    # Every _POLICY_SLOT value must carry a `.dot.sN` fill rule in the dashboard CSS.
+    from safestack.eval.figures import _POLICY_SLOT
+
+    h = build_dashboard_html(_rows())
+    for slot in set(_POLICY_SLOT.values()):
+        assert f".dot.s{slot} {{" in h, f"missing .dot.s{slot} fill rule for a Pareto dot slot"
