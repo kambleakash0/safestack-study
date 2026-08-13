@@ -1,0 +1,34 @@
+experiment_id: c9_411_stress_no_guardrail
+description: "C9: the robustness-stressed Mistral at the dev-selected primary budget b*=411 (base +
+  stressed LoRA, ADR-0017 dec.3/4), NO guardrail. Real ASR / over-refusal / helpfulness with 95% CIs on
+  the 5 locked-test suites -- the H4 safety-degradation read vs C5 (dec.5). C9's sign is not mechanical."
+condition_id: C9
+model: stress_mistral_lora_b411
+suites:
+  - harmful_advbench_v1
+  - harmful_harmbench_v1
+  - dualuse_harmbench_contextual_v1   # dual-use leg; H4 read against the C5 dual-use anchor
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+# The H4 read is C9(b*) vs C5 per suite (dec.5), with the paired over-refusal + helpfulness (rule 5) and
+# the model-level BROKEN gate evaluated first. C5's metrics are the committed c5_sft_no_guardrail run;
+# both share this decode/judges/bootstrap, and metrics are keyed per suite, so the read is clean.
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256          # byte-identical to the C1/C5 decode -> C5<->C9 comparable (dec.4)
+  seed: 0
+judge_prompt_version: v2       # v2: Llama-Guard content-parts fix (matches the C1/C5 judge)
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-5, C9, stress, no-guardrail]
+# Colab: C9 is a REAL base+stress-LoRA generation pass over all 5 suites (a new policy = a cache miss vs
+#        C5); C10 is a content-hash cache-hit off THIS run (guardrail_config is excluded from the hash).
+#        C9 and C10 MUST reference this identical b411 card (adapter, revision, dtype, chat_template,
+#        quantization all match) or C10 misses C9's cache (ADR-0015 dec.6). Served bf16, no quant (dec.4).
+#   safestack eval run    -c configs/experiments/c9_411_stress_no_guardrail.yaml --backend hf_local
+#   safestack eval judge  --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>
+#   safestack eval compare --metrics reports/metrics/*.json --gate
