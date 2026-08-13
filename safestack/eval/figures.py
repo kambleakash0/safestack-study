@@ -614,9 +614,12 @@ def write_figures(
     dashboard: str | Path | None = "reports/dashboard.html",
     formats: tuple[str, ...] = ("svg", "png"),
     dashboard_only: bool = False,
+    selection: dict | None = None,
 ) -> list[Path]:
     """Write the matplotlib figures and (optionally) the HTML dashboard; return the paths. When
-    ``grid`` is given, the per-category ASR heatmap is added (static figure + dashboard panel).
+    ``grid`` is given, the per-category ASR heatmap is added (static figure + dashboard panel); when
+    ``selection`` (a committed BudgetSelection dict) is given, the Phase-5 dose-response figure is
+    added (ADR-0017 dec.8).
 
     ``dashboard_only=True`` skips the matplotlib pass entirely, so the theme-aware HTML (which needs
     no matplotlib) can be produced on an install without the optional ``[viz]`` extra."""
@@ -632,6 +635,10 @@ def write_figures(
             written += plot_segment_heatmap(
                 grid, figures_dir / "segment_asr_heatmap", formats=formats
             )
+        if selection is not None:
+            written += plot_dose_response(
+                selection, figures_dir / "dose_response_stress", formats=formats
+            )
     if dashboard is not None:
         dpath = Path(dashboard)
         dpath.parent.mkdir(parents=True, exist_ok=True)
@@ -643,3 +650,71 @@ def write_figures(
 def figures_from_paths(paths: list[str | Path], **kw) -> list[Path]:
     arts = load_artifacts(paths)  # loaded once -> the bars/pareto rows and the heatmap grid
     return write_figures(ablation_rows(arts), grid=segment_asr_grid(arts), **kw)
+
+# --------------------------------------------------------------------------------------------------
+# Phase-5 dose-response (ADR-0017 dec.8, master-plan section 10.4): the three DEV metrics vs stress
+# budget, read together per rule 5. EXPLORATORY (dev-suite sweep); the confirmatory single-budget
+# C9/C10 read is ADR-0018. Reads the committed BudgetSelection artifact -- aggregate, no raw text.
+# --------------------------------------------------------------------------------------------------
+# (DosePoint attribute, legend label, palette slot). Categorical hues, fixed order, never cycled.
+DOSE_SERIES: list[tuple[str, str, int]] = [
+    ("asr", "dev ASR", 0),               # blue
+    ("over_refusal", "dev over-refusal", 1),   # orange
+    ("answer_rate", "dev answer-rate", 2),     # aqua
+]
+
+
+@dataclass(frozen=True)
+class DosePoint:
+    budget: int
+    asr: float
+    over_refusal: float
+    answer_rate: float
+
+
+def dose_response_series(selection: dict) -> list[DosePoint]:
+    """The dev dose-response points from a committed BudgetSelection artifact, ascending by budget,
+    with budget 0 = the C5 (SFT) anchor (the ``base_*`` fields). Pure -- no matplotlib, no raw."""
+    pts = [
+        DosePoint(
+            0,
+            selection["base_asr"],
+            selection["base_over_refusal"],
+            selection["base_helpfulness_answer_rate"],
+        )
+    ]
+    for g in selection["per_budget"]:
+        pts.append(
+            DosePoint(g["budget"], g["asr"], g["over_refusal"], g["helpfulness_answer_rate"])
+        )
+    return sorted(pts, key=lambda p: p.budget)
+
+
+def plot_dose_response(
+    selection: dict, out_base: str | Path, *, formats: tuple[str, ...] = ("svg", "png")
+) -> list[Path]:
+    """Static line chart of the three DEV metrics vs stress budget (exploratory, ADR-0017 dec.8).
+    Categorical x (the dose grid is unequally spaced); budget 0 = the C5 SFT anchor; a dashed marker
+    calls out the dev-selected b\\*. All three metrics are 0-1 rates, so they share one y-axis."""
+    plt = _pyplot()
+    pts = dose_response_series(selection)
+    xs = list(range(len(pts)))
+    budgets = [p.budget for p in pts]
+    fig, ax = plt.subplots(figsize=(8.0, 4.6))
+    for field, label, slot in DOSE_SERIES:
+        ys = [getattr(p, field) for p in pts]
+        ax.plot(xs, ys, marker="o", linewidth=2, color=PALETTE[slot][0], label=label)
+    ax.set_xticks(xs)
+    ax.set_xticklabels([str(b) for b in budgets])
+    ax.set_xlabel("robustness-stress budget (N examples; 0 = C5 SFT anchor)")
+    ax.set_ylabel("dev rate (0-1)")
+    ax.set_ylim(-0.02, 1.08)
+    ax.set_title("Robustness-stress dose-response on the dev suites (exploratory; ADR-0017 dec.8)")
+    bstar = selection.get("selected_budget")
+    if bstar in budgets:
+        bx = budgets.index(bstar)
+        ax.axvline(bx, color=_ERRBAR, linestyle="--", linewidth=1)
+        ax.annotate(f"b* = {bstar}", (bx, 1.04), ha="center", fontsize=9, color=_ERRBAR)
+    ax.legend(title="dev metric", frameon=False)
+    ax.spines[["top", "right"]].set_visible(False)
+    return _save(fig, Path(out_base), formats)

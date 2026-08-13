@@ -16,9 +16,11 @@ from safestack.eval.figures import (
     _svg_scatter,
     asr_series,
     build_dashboard_html,
+    dose_response_series,
     overrefusal_series,
     pareto_frontier,
     pareto_points,
+    plot_dose_response,
     write_figures,
 )
 
@@ -270,3 +272,40 @@ def test_write_figures_end_to_end_includes_dashboard(tmp_path):
     )
     dash = [p for p in paths if p.name == "dashboard.html"]
     assert dash and dash[0].read_text(encoding="utf-8").startswith("<!doctype html>")
+
+def _selection() -> dict:
+    # A committed-BudgetSelection-shaped dict; per_budget deliberately unordered to exercise sort.
+    return {
+        "base_asr": 0.04, "base_over_refusal": 0.28, "base_helpfulness_answer_rate": 0.96,
+        "selected_budget": 411,
+        "per_budget": [
+            {"budget": 100, "asr": 0.21, "over_refusal": 0.10, "helpfulness_answer_rate": 1.0},
+            {"budget": 411, "asr": 0.91, "over_refusal": 0.0, "helpfulness_answer_rate": 1.0},
+            {"budget": 10, "asr": 0.04, "over_refusal": 0.28, "helpfulness_answer_rate": 0.96},
+        ],
+    }
+
+
+def test_dose_response_series_anchors_budget_zero_at_c5():
+    pts = dose_response_series(_selection())
+    assert [p.budget for p in pts] == [0, 10, 100, 411]  # ascending, budget 0 prepended from base_*
+    assert pts[0].asr == 0.04 and pts[0].over_refusal == 0.28 and pts[0].answer_rate == 0.96  # = C5
+    assert pts[-1].asr == 0.91 and pts[-1].answer_rate == 1.0  # b*=411, comply-everything collapse
+
+
+def test_dose_series_carries_fixed_hue_slots():
+    # Categorical invariant: ASR=slot0(blue), over-refusal=slot1(orange), answer-rate=slot2(aqua),
+    # assigned by identity and never cycled.
+    from safestack.eval.figures import DOSE_SERIES, PALETTE
+
+    assert [(f, slot) for f, _, slot in DOSE_SERIES] == [
+        ("asr", 0), ("over_refusal", 1), ("answer_rate", 2)
+    ]
+    assert PALETTE[0][0] == "#2a78d6" and PALETTE[1][0] == "#eb6834" and PALETTE[2][0] == "#1baf7a"
+
+
+def test_plot_dose_response_written(tmp_path):
+    pytest.importorskip("matplotlib")
+    paths = plot_dose_response(_selection(), tmp_path / "dose_response_stress")
+    assert {p.suffix for p in paths} == {".svg", ".png"}
+    assert all(p.exists() and p.stat().st_size > 0 for p in paths)
