@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -149,6 +150,7 @@ def ablation_cmd(
     for path in write_failure_taxonomy(taxonomy, taxonomy_out, formats=formats):
         typer.echo(f"failure taxonomy: {path}")
 
+
 @app.command("figures")
 def figures_cmd(
     metrics: list[Path] = typer.Option(..., "--metrics", help="MetricsArtifact JSONs (C1-C8)."),
@@ -161,10 +163,17 @@ def figures_cmd(
     dashboard_only: bool = typer.Option(
         False, "--dashboard-only", help="Only write the HTML dashboard (no matplotlib / [viz])."
     ),
+    selection: Path | None = typer.Option(
+        None, "--selection",
+        help="BudgetSelection JSON -> also emit the Phase-5 dose-response figure (dec.8).",
+    ),
 ) -> None:
-    """Phase 4: ASR + over-refusal figures (matplotlib) plus the theme-aware HTML dashboard."""
+    """Phase 4: ASR + over-refusal figures (matplotlib) plus the theme-aware HTML dashboard;
+    with --selection, also the Phase-5 dose-response figure (ADR-0017 dec.8)."""
+    sel = json.loads(selection.read_text(encoding="utf-8")) if selection is not None else None
     paths = figures_from_paths(
-        list(metrics), figures_dir=figures_dir, dashboard=dashboard, dashboard_only=dashboard_only
+        list(metrics), figures_dir=figures_dir, dashboard=dashboard,
+        dashboard_only=dashboard_only, selection=sel,
     )
     for path in paths:
         typer.echo(f"figure: {path}")
