@@ -15,6 +15,7 @@
   "schema_version": 1,
   "tasks": [
     {
+      "anchor_tol": 0.03,
       "lm_eval_task": "mmlu",
       "metrics": {
         "acc,none": 0.6185728528699616,
@@ -31,6 +32,7 @@
       "stderr": 0.003892877185231278
     },
     {
+      "anchor_tol": 0.06,
       "lm_eval_task": "gsm8k",
       "metrics": {
         "exact_match,flexible-extract": 0.5344958301743745,
@@ -49,6 +51,7 @@
       "stderr": 0.013752517189717458
     },
     {
+      "anchor_tol": 0.03,
       "lm_eval_task": "leaderboard_ifeval",
       "metrics": {
         "inst_level_loose_acc,none": 0.6486810551558753,
