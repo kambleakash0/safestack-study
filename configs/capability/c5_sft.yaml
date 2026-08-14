@@ -1,0 +1,22 @@
+# Capability / utility eval of the SFT-aligned policy (C5). No public_anchor -- this adapter is our
+# own artifact. Read as UtilityNorm vs the base run: did SFT alignment preserve core capability?
+# EXPLORATORY (ADR-0004 rule 2); lm-eval protocols, OUTSIDE the frozen greedy/256 decode.
+experiment_id: capability_c5_sft
+label: C5 SFT
+model: sft_mistral_lora_v1
+tasks:
+  - name: mmlu
+    lm_eval_task: mmlu
+    num_fewshot: 5
+    metric_key: "acc,none"
+  - name: gsm8k
+    lm_eval_task: gsm8k
+    num_fewshot: 5
+    metric_key: "exact_match,strict-match"
+  - name: ifeval
+    lm_eval_task: leaderboard_ifeval
+    num_fewshot: 0
+    metric_key: "prompt_level_strict_acc,none"
+    apply_chat_template: true   # must match the base run's IFEval protocol for a comparable ratio
+seed: 0
+schema_version: 1

@@ -14,6 +14,12 @@ from safestack.eval.ablation import (
     write_ablation,
     write_before_after,
 )
+from safestack.eval.capability import (
+    CapabilityArtifact,
+    load_capability_config,
+    run_capability,
+    utility_norm,
+)
 from safestack.eval.figures import figures_from_paths
 from safestack.eval.generate import run_suite
 from safestack.eval.judges import _load_cfg_from_run, judge_run
@@ -183,3 +189,37 @@ def figures_cmd(
 def _configure_logging() -> None:
     """Surface run/judge progress logs, mirroring `safestack run` (safestack/cli.py)."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+@app.command("capability")
+def capability_cmd(
+    config: Path = typer.Option(..., "--config", "-c", help="CapabilityEvalConfig YAML."),
+    backend: str = typer.Option("mock", "--backend", help="mock (CI) | hf (real lm-eval)."),
+    out_dir: Path = typer.Option(
+        Path("reports/metrics/capability"), "--out-dir", help="Aggregate artifact output dir."
+    ),
+    models_dir: Path = _MODELS,
+) -> None:
+    """Exploratory capability/utility eval (MMLU/GSM8K/IFEval) for one policy; aggregate-only,
+    OUTSIDE the frozen decode (ADR-0004 rule 2). Writes one CapabilityArtifact JSON."""
+    art = run_capability(
+        load_capability_config(config), backend=backend, models_dir=models_dir, out_dir=out_dir
+    )
+    typer.echo(f"capability: {out_dir / (art.experiment_id + '.json')}  [{art.label}]")
+    for t in art.tasks:
+        typer.echo(f"  {t.name}: {t.primary_value:.4f} ({t.primary_metric})")
+
+
+@app.command("utility-norm")
+def utility_norm_cmd(
+    base: Path = typer.Option(..., "--base", help="Base CapabilityArtifact JSON (denominator)."),
+    method: Path = typer.Option(..., "--method", help="Method CapabilityArtifact JSON."),
+) -> None:
+    """UtilityNorm = U(method)/U(base) per task + overall (GRP-Obliteration degradation axis)."""
+    b = CapabilityArtifact.model_validate(json.loads(base.read_text(encoding="utf-8")))
+    m = CapabilityArtifact.model_validate(json.loads(method.read_text(encoding="utf-8")))
+    rep = utility_norm(m, b)
+    for r in rep.rows:
+        un = "n/a" if r.utility_norm is None else f"{r.utility_norm:.3f}"
+        typer.echo(f"  {r.task}: {r.method_value:.4f} / {r.base_value:.4f} = {un}")
+    overall = "n/a" if rep.overall_utility_norm is None else f"{rep.overall_utility_norm:.3f}"
+    typer.echo(f"overall UtilityNorm ({rep.method_label} vs {rep.base_label}): {overall}")
