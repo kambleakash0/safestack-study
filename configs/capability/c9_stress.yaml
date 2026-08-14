@@ -1,0 +1,23 @@
+# Capability / utility eval of the shadow-UNALIGNED policy (C9, stressed b*=411). No public_anchor
+# -- our own artifact. Read as UtilityNorm vs the base run: is the stressed model CLEANLY unaligned
+# and still capable (UtilityNorm ~ 1) rather than merely broken? Hardens the H4 BROKEN-vs-clean-
+# strip read (ADR-0017 dec.5). EXPLORATORY (ADR-0004 rule 2); lm-eval protocols, OUTSIDE frozen decode.
+experiment_id: capability_c9_stress
+label: C9 stressed
+model: stress_mistral_lora_b411
+tasks:
+  - name: mmlu
+    lm_eval_task: mmlu
+    num_fewshot: 5
+    metric_key: "acc,none"
+  - name: gsm8k
+    lm_eval_task: gsm8k
+    num_fewshot: 5
+    metric_key: "exact_match,strict-match"
+  - name: ifeval
+    lm_eval_task: leaderboard_ifeval
+    num_fewshot: 0
+    metric_key: "prompt_level_strict_acc,none"
+    apply_chat_template: true   # must match the base run's IFEval protocol for a comparable ratio
+seed: 0
+schema_version: 1

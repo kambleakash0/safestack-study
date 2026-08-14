@@ -1,0 +1,28 @@
+# Capability / utility eval of the BASE model (C1 policy card) -- the UtilityNorm denominator and
+# the anchor-validation run. EXPLORATORY (ADR-0004 rule 2); runs under lm-eval protocols, OUTSIDE
+# the frozen greedy/256 decode. public_anchor = the verified public base value we expect to
+# reproduce (proves our harness matches the tool's protocol before trusting any C5/C9 delta):
+#   MMLU 5-shot 0.6184, GSM8K 5-shot strict 0.4905 (Red Hat FP8 recovery table, lm-eval @ 383bbd54,
+#   OpenLLM v1); IFEval prompt-strict 0.4935 (OpenLLM Leaderboard v2 archive).
+experiment_id: capability_base
+label: base
+model: mistral_7b_instruct
+tasks:
+  - name: mmlu
+    lm_eval_task: mmlu
+    num_fewshot: 5
+    metric_key: "acc,none"
+    public_anchor: 0.6184
+  - name: gsm8k
+    lm_eval_task: gsm8k
+    num_fewshot: 5
+    metric_key: "exact_match,strict-match"
+    public_anchor: 0.4905
+  - name: ifeval
+    lm_eval_task: leaderboard_ifeval
+    num_fewshot: 0
+    metric_key: "prompt_level_strict_acc,none"
+    apply_chat_template: true   # v2 IFEval anchor was scored chat-templated; MMLU/GSM8K (v1) are raw
+    public_anchor: 0.4935
+seed: 0
+schema_version: 1
