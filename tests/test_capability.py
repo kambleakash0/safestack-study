@@ -163,6 +163,24 @@ def test_build_lm_eval_args_applies_chat_template_only_where_the_task_asks():
     assert ifeval.index("leaderboard_ifeval") > 0
 
 
+def test_build_lm_eval_args_vllm_base_uses_vllm_model_no_lora():
+    args = build_lm_eval_args(_cfg(), BASE_SPEC, MMLU, backend="vllm")
+    joined = " ".join(args)
+    assert args[args.index("--model") + 1] == "vllm"
+    assert "gpu_memory_utilization=0.9" in joined and "max_model_len=4096" in joined
+    assert "enable_lora" not in joined and "peft=" not in joined  # base has no adapter
+
+
+def test_build_lm_eval_args_vllm_adapter_serves_lora_natively():
+    args = build_lm_eval_args(
+        _cfg(model=ADAPTER_SPEC), ADAPTER_SPEC, GSM8K, adapter_path="/snap/b411", backend="vllm"
+    )
+    joined = " ".join(args)
+    assert args[args.index("--model") + 1] == "vllm"
+    assert "enable_lora=True" in joined and "lora_local_path=/snap/b411" in joined
+    assert "max_lora_rank=16" in joined and "peft=" not in joined  # vLLM native LoRA, not hf peft
+
+
 def test_utility_norm_ratios_and_overall():
     base = _art("base", {"mmlu": 0.60, "gsm8k": 0.50})
     method = _art("C9 stressed", {"mmlu": 0.54, "gsm8k": 0.55})
@@ -201,6 +219,15 @@ def test_validate_anchors_flags_out_of_tolerance():
     assert rows[0].within_tol is True and rows[0].abs_delta < 0.03
     bad = art.model_copy(update={"tasks": [tr.model_copy(update={"primary_value": 0.40})]})
     assert validate_anchors(bad, tol=0.03)[0].within_tol is False
+
+
+def test_utility_norm_requires_same_backend():
+    base = _art("base", {"mmlu": 0.6})  # backend "mock"
+    method = _art("C9", {"mmlu": 0.5})  # backend "mock" -- same, OK
+    utility_norm(method, base)
+    hf_method = method.model_copy(update={"backend": "hf"})
+    with pytest.raises(ValueError, match="same-backend"):
+        utility_norm(hf_method, base)  # cross-backend ratio is a silent confound -> refused
 
 
 def test_validate_anchors_uses_per_task_tolerance():

@@ -39,7 +39,7 @@ train = [
 viz = ["matplotlib>=3.8"]
 # lm-eval[ifeval] pulls IFEval's scoring deps (langdetect/immutabledict/nltk); the leaderboard_ifeval
 # task import errors without them. NOTE: nltk also needs a runtime punkt download on the GPU box.
-capability = ["safestack[hf]", "lm-eval[ifeval]>=0.4.4"]
+capability = ["safestack[hf]", "lm-eval[ifeval]>=0.4.4,<0.5"]
 
 [project.scripts]
 safestack = "safestack.cli:app"
