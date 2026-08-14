@@ -203,6 +203,23 @@ def test_validate_anchors_flags_out_of_tolerance():
     assert validate_anchors(bad, tol=0.03)[0].within_tol is False
 
 
+def test_validate_anchors_uses_per_task_tolerance():
+    # GSM8K carries a wider anchor_tol; a 0.036 delta fails the tight 0.03 default but passes 0.06,
+    # since lm-eval strict-match extraction drifts across versions (issue #148). The tol rides on
+    # the artifact's TaskResult so validate_anchors reads it without the config.
+    gsm = TaskResult(
+        name="gsm8k", lm_eval_task="gsm8k", num_fewshot=5,
+        primary_metric="exact_match,strict-match", primary_value=0.5269,
+        public_anchor=0.4905, anchor_tol=0.06,
+    )
+    art = CapabilityArtifact(
+        experiment_id="e", label="base", backend="hf", model_fingerprint={}, tasks=[gsm]
+    )
+    row = validate_anchors(art)[0]  # per-task tolerance
+    assert row.tol == 0.06 and row.within_tol is True  # 0.036 delta within GSM8K's wider band
+    assert validate_anchors(art, tol=0.03)[0].within_tol is False  # global override still fails it
+
+
 def test_mock_backend_runs_end_to_end_and_writer_is_byte_stable(tmp_path):
     # inline ModelSpec -> no registry / models_dir; mock -> no lm-eval, no GPU (CI-green)
     art = run_capability(_cfg(), backend="mock")
@@ -232,6 +249,9 @@ def test_capability_configs_wire_base_c5_c9():
         by = {t.name: t for t in cfg.tasks}
         assert by["ifeval"].apply_chat_template is True  # v2 IFEval scored chat-templated
         assert by["mmlu"].apply_chat_template is False and by["gsm8k"].apply_chat_template is False
+        if stem == "base":
+            assert by["gsm8k"].anchor_tol == 0.06  # version-fragile strict-match (issue #148)
+            assert by["mmlu"].anchor_tol == 0.03 and by["ifeval"].anchor_tol == 0.03
         anchors_set = all(t.public_anchor is not None for t in cfg.tasks)
         assert anchors_set == (stem == "base")  # public anchors only exist for the base model
 

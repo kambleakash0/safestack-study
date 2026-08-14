@@ -56,6 +56,10 @@ class CapabilityTaskSpec(_Frozen):
     # template). Set True only for the tasks whose anchor used --apply_chat_template.
     apply_chat_template: bool = False
     public_anchor: float | None = None  # verified BASE value (0-1); None for our own adapters
+    # abs tolerance for the anchor gate. Default 0.03 (MMLU/IFEval match tightly); GSM8K needs a
+    # wider band -- lm-eval's strict-match extraction drifts across versions and the anchor is from
+    # an older pinned commit than our install (higher, not lower -> no regression; issue #148).
+    anchor_tol: float = 0.03
     schema_version: int = 1
 
 
@@ -84,6 +88,7 @@ class TaskResult(_Frozen):
     n: int | None = None
     metrics: dict[str, float] = Field(default_factory=dict)  # all aggregate numeric metrics
     public_anchor: float | None = None
+    anchor_tol: float = 0.03  # carried from the task spec so validate_anchors reads it off this row
     schema_version: int = 1
 
 
@@ -124,6 +129,7 @@ class AnchorRow(_Frozen):
     value: float
     anchor: float
     abs_delta: float
+    tol: float
     within_tol: bool
 
 
@@ -169,6 +175,7 @@ def parse_lm_eval_result(raw: dict, task: CapabilityTaskSpec) -> TaskResult:
         n=n,
         metrics=metrics,
         public_anchor=task.public_anchor,
+        anchor_tol=task.anchor_tol,
     )
 
 
@@ -238,14 +245,17 @@ def utility_norm(method: CapabilityArtifact, base: CapabilityArtifact) -> Utilit
     )
 
 
-def validate_anchors(art: CapabilityArtifact, *, tol: float = 0.03) -> list[AnchorRow]:
-    """For each task carrying a public_anchor, whether the run reproduces it within `tol` (abs).
-    Meaningful only for the BASE run: a within-tol pass proves our harness matches the public
-    protocol before we trust any C5/C9 delta; an out-of-tol row flags a broken setup."""
+def validate_anchors(art: CapabilityArtifact, *, tol: float | None = None) -> list[AnchorRow]:
+    """For each task carrying a public_anchor, whether the run reproduces it within tolerance (abs).
+    Uses each task's own ``anchor_tol`` (GSM8K is version-fragile, so wider); pass ``tol`` to
+    override every task with one global value. Meaningful only for the BASE run: a within-tol pass
+    proves the harness matches the public protocol before we trust any C5/C9 delta; an out-of-tol
+    row flags a broken setup."""
     out: list[AnchorRow] = []
     for t in art.tasks:
         if t.public_anchor is None:
             continue
+        task_tol = t.anchor_tol if tol is None else tol
         delta = abs(t.primary_value - t.public_anchor)
         out.append(
             AnchorRow(
@@ -253,7 +263,8 @@ def validate_anchors(art: CapabilityArtifact, *, tol: float = 0.03) -> list[Anch
                 value=t.primary_value,
                 anchor=t.public_anchor,
                 abs_delta=delta,
-                within_tol=delta <= tol,
+                tol=task_tol,
+                within_tol=delta <= task_tol,
             )
         )
     return out
@@ -279,6 +290,7 @@ def _mock_results(cfg: CapabilityEvalConfig) -> list[TaskResult]:
                 n=cfg.limit,
                 metrics={t.metric_key: val},
                 public_anchor=t.public_anchor,
+                anchor_tol=t.anchor_tol,
             )
         )
     return out
