@@ -35,7 +35,7 @@ from safestack.hashing import model_fingerprint
 from safestack.registry import DEFAULT_MODELS_DIR, resolve_model_spec
 
 # mock = deterministic, no lm-eval / no GPU (CI). hf = the real lm-evaluation-harness run.
-CapabilityBackend = Literal["mock", "hf"]
+CapabilityBackend = Literal["mock", "hf", "vllm"]
 SUPPORTED_SCHEMA_VERSION = 1
 
 
@@ -185,27 +185,36 @@ def build_lm_eval_args(
     task: CapabilityTaskSpec,
     *,
     adapter_path: str | None = None,
+    backend: str = "hf",
 ) -> list[str]:
     """The `lm_eval` argv (minus the program name) for ONE task -- pure, so it is unit-testable.
-    One invocation per task keeps each benchmark at its own num_fewshot (MMLU/GSM8K 5, IFEval 0)
-    and its own template protocol (v1 MMLU/GSM8K raw; v2 IFEval chat-templated)."""
+    `backend` is lm-eval's --model ("hf" or "vllm"; vLLM's continuous batching is far faster on the
+    generative tasks). One invocation per task keeps each benchmark at its own num_fewshot (5 for
+    MMLU/GSM8K, 0 for IFEval) and its template protocol (v1 raw; v2 IFEval chat-templated)."""
     model_args = f"pretrained={spec.checkpoint}"
     if spec.revision:
         model_args += f",revision={spec.revision}"
     model_args += f",dtype={spec.dtype}"
+    if backend == "vllm":
+        # vLLM serving knobs -- continuous batching makes generation (GSM8K/IFEval) far faster.
+        # max_model_len covers 5-shot MMLU prompts; gpu_memory_utilization leaves KV-cache room.
+        model_args += ",gpu_memory_utilization=0.9,max_model_len=4096"
     if spec.adapter:
-        # The adapter must be served at its pinned adapter_revision. lm-eval's HFLM `peft=` takes no
-        # separate revision and would forward the base `revision` to the adapter load, so the real
-        # run (_run_lm_eval) materialises the adapter locally at adapter_revision and passes that
-        # snapshot path here (ADR-0015 dec.7b); a bare, unpinned repo id is refused.
+        # The adapter must be served at its pinned adapter_revision. The real run (_run_lm_eval)
+        # materialises it locally at adapter_revision and passes that snapshot path here (ADR-0015
+        # dec.7b); an unpinned repo id is refused. hf loads it via peft=; vLLM serves it natively.
         if adapter_path is None:
             raise ValueError(
                 f"adapter {spec.adapter!r} set but no materialised adapter_path -- the real run "
                 "must snapshot_download it at adapter_revision first (ADR-0015 dec.7b)"
             )
-        model_args += f",peft={adapter_path}"
+        if backend == "vllm":
+            # vLLM serves the LoRA natively (no runtime merge); max_lora_rank >= adapter rank (16).
+            model_args += f",enable_lora=True,lora_local_path={adapter_path},max_lora_rank=16"
+        else:
+            model_args += f",peft={adapter_path}"
     args = [
-        "--model", "hf",
+        "--model", backend,
         "--model_args", model_args,
         "--tasks", task.lm_eval_task,
         "--num_fewshot", str(task.num_fewshot),
@@ -223,6 +232,13 @@ def build_lm_eval_args(
 def utility_norm(method: CapabilityArtifact, base: CapabilityArtifact) -> UtilityReport:
     """UtilityNorm per task (method primary / base primary) + overall mean. A base primary <= 0
     makes the ratio undefined (None), which also makes the overall None -- reported, never faked."""
+    if method.backend != base.backend:
+        # method and base must share a backend so backend differences cancel in the ratio; else a
+        # cross-backend ratio (e.g. hf base / vLLM method) is a silent confound.
+        raise ValueError(
+            f"UtilityNorm requires same-backend artifacts: method backend {method.backend!r} "
+            f"!= base backend {base.backend!r}"
+        )
     base_by_task = {t.name: t for t in base.tasks}
     rows: list[UtilityRow] = []
     for mt in method.tasks:
@@ -296,7 +312,9 @@ def _mock_results(cfg: CapabilityEvalConfig) -> list[TaskResult]:
     return out
 
 
-def _run_lm_eval(cfg: CapabilityEvalConfig, spec: ModelSpec) -> list[TaskResult]:
+def _run_lm_eval(
+    cfg: CapabilityEvalConfig, spec: ModelSpec, *, backend: str = "hf"
+) -> list[TaskResult]:
     """Real path (hf-marked): one `lm_eval` subprocess per task, parsed aggregate-only. Lazy-imports
     so the base package stays lm-eval-free; one model resident at a time (no two large ones). An
     adapter is materialised locally at its pinned adapter_revision so the run honours the pin
@@ -319,7 +337,7 @@ def _run_lm_eval(cfg: CapabilityEvalConfig, spec: ModelSpec) -> list[TaskResult]
         with tempfile.TemporaryDirectory() as td:
             argv = [
                 "lm_eval",
-                *build_lm_eval_args(cfg, spec, task, adapter_path=adapter_path),
+                *build_lm_eval_args(cfg, spec, task, adapter_path=adapter_path, backend=backend),
                 "--output_path", td,
             ]
             subprocess.run(argv, check=True)  # noqa: S603 -- args built from a validated config
@@ -347,8 +365,8 @@ def run_capability(
     spec = resolve_model_spec(cfg.model, models_dir=models_dir)
     if backend == "mock":
         tasks = _mock_results(cfg)
-    elif backend == "hf":
-        tasks = _run_lm_eval(cfg, spec)
+    elif backend in ("hf", "vllm"):
+        tasks = _run_lm_eval(cfg, spec, backend=backend)
     else:
         # reachable: the CLI passes an unvalidated --backend string, not a Literal
         raise ValueError(f"unknown capability backend {backend!r}")

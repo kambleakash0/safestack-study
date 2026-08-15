@@ -1834,7 +1834,7 @@ requires-dist = [
     { name = "bitsandbytes", marker = "extra == 'train'", specifier = ">=0.43" },
     { name = "datasets", marker = "extra == 'data'", specifier = ">=3" },
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27" },
-    { name = "lm-eval", extras = ["ifeval"], marker = "extra == 'capability'", specifier = ">=0.4.4" },
+    { name = "lm-eval", extras = ["ifeval"], marker = "extra == 'capability'", specifier = ">=0.4.4,<0.5" },
     { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.8" },
     { name = "peft", marker = "extra == 'hf'", specifier = ">=0.11" },
     { name = "pydantic", specifier = ">=2.9" },
