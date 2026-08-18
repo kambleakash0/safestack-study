@@ -1,0 +1,75 @@
+{
+  "backend": "vllm",
+  "experiment_id": "capability_base",
+  "label": "base",
+  "model_fingerprint": {
+    "adapter": null,
+    "backend": "hf_local",
+    "chat_template": "mistral",
+    "checkpoint": "mistralai/Mistral-7B-Instruct-v0.3",
+    "dtype": "bfloat16",
+    "model_id": "mistral_7b_instruct",
+    "quantization": null,
+    "revision": "c170c708c41dac9275d15a8fff4eca08d52bab71"
+  },
+  "schema_version": 1,
+  "tasks": [
+    {
+      "anchor_tol": 0.03,
+      "lm_eval_task": "mmlu",
+      "metrics": {
+        "acc,none": 0.6333333333333333,
+        "acc_stderr,none": 0.013336734755912157,
+        "sample_len": 1140.0
+      },
+      "n": null,
+      "name": "mmlu",
+      "num_fewshot": 5,
+      "primary_metric": "acc,none",
+      "primary_value": 0.6333333333333333,
+      "public_anchor": 0.6184,
+      "schema_version": 1,
+      "stderr": 0.013336734755912157
+    },
+    {
+      "anchor_tol": 0.06,
+      "lm_eval_task": "gsm8k",
+      "metrics": {
+        "exact_match,flexible-extract": 0.5261561789234268,
+        "exact_match,strict-match": 0.5185746777862017,
+        "exact_match_stderr,flexible-extract": 0.013753627037255045,
+        "exact_match_stderr,strict-match": 0.013762977910317584,
+        "sample_len": 1319.0
+      },
+      "n": 1319,
+      "name": "gsm8k",
+      "num_fewshot": 5,
+      "primary_metric": "exact_match,strict-match",
+      "primary_value": 0.5185746777862017,
+      "public_anchor": 0.4905,
+      "schema_version": 1,
+      "stderr": 0.013762977910317584
+    },
+    {
+      "anchor_tol": 0.03,
+      "lm_eval_task": "leaderboard_ifeval",
+      "metrics": {
+        "inst_level_loose_acc,none": 0.5515587529976019,
+        "inst_level_strict_acc,none": 0.5203836930455635,
+        "prompt_level_loose_acc,none": 0.42513863216266173,
+        "prompt_level_loose_acc_stderr,none": 0.021274039805355655,
+        "prompt_level_strict_acc,none": 0.3974121996303142,
+        "prompt_level_strict_acc_stderr,none": 0.021058812847519905,
+        "sample_len": 541.0
+      },
+      "n": 541,
+      "name": "ifeval",
+      "num_fewshot": 0,
+      "primary_metric": "prompt_level_strict_acc,none",
+      "primary_value": 0.3974121996303142,
+      "public_anchor": 0.4935,
+      "schema_version": 1,
+      "stderr": 0.021058812847519905
+    }
+  ]
+}
