@@ -314,3 +314,22 @@ def test_cli_capability_and_utility_norm_run_via_mock(tmp_path):
                             "--method", str(out / "capability_c9_stress.json")])
     assert r.exit_code == 0, r.output
     assert "overall UtilityNorm" in r.output
+
+def test_run_and_tee_streams_to_cell_and_saves_log_and_returns_code(capsys, tmp_path):
+    # the tee shows output live in the cell AND writes it to a log file, returning the exit code so
+    # the caller can save the traceback on failure (#150).
+    import sys as _sys
+
+    from safestack.eval.capability import _run_and_tee
+
+    log = tmp_path / "run.log"
+    rc = _run_and_tee(
+        [_sys.executable, "-c",
+         "import sys; print('progress 50%'); print('boom', file=sys.stderr); sys.exit(2)"],
+        log,
+    )
+    assert rc == 2
+    out = capsys.readouterr().out
+    assert "progress 50%" in out and "boom" in out  # streamed live to the cell
+    saved = log.read_text(encoding="utf-8")
+    assert "progress 50%" in saved and "boom" in saved  # and saved to the log file for pasting

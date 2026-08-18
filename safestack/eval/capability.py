@@ -312,14 +312,38 @@ def _mock_results(cfg: CapabilityEvalConfig) -> list[TaskResult]:
     return out
 
 
+def _run_and_tee(argv: list[str], log_path: Path) -> int:
+    """Run `argv`, streaming its merged stdout+stderr to this cell (so lm-eval's tqdm progress bars
+    show) while teeing it to `log_path`, so the full output -- including any traceback -- is saved
+    to disk. Returns the exit code; the caller decides what a nonzero code means."""
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}  # flush progress/logs to the cell promptly
+    with open(log_path, "w", encoding="utf-8") as log:
+        proc = subprocess.Popen(  # noqa: S603 -- args built from a validated config
+            argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env
+        )
+        while True:
+            chunk = proc.stdout.read1(65536)
+            if not chunk:
+                break
+            text = chunk.decode("utf-8", errors="replace")
+            sys.stdout.write(text)  # live in the cell; \r keeps tqdm bars updating in place
+            sys.stdout.flush()
+            log.write(text)
+        return proc.wait()
+
 def _run_lm_eval(
     cfg: CapabilityEvalConfig, spec: ModelSpec, *, backend: str = "hf"
 ) -> list[TaskResult]:
-    """Real path (hf-marked): one `lm_eval` subprocess per task, parsed aggregate-only. Lazy-imports
-    so the base package stays lm-eval-free; one model resident at a time (no two large ones). An
-    adapter is materialised locally at its pinned adapter_revision so the run honours the pin
-    (ADR-0015 dec.7b) and avoids lm-eval forwarding the base revision to the adapter load."""
-    import subprocess
+    """Real path (hf-marked): one `lm_eval` subprocess per task, parsed aggregate-only. Each task's
+    merged stdout+stderr is streamed to the cell (so lm-eval's tqdm progress bars show) and teed to
+    a per-task log file; on a nonzero exit the error names that log so the traceback can be pasted.
+    Lazy-imports so the base package stays lm-eval-free; one model resident at a time. An adapter is
+    materialised locally at its pinned adapter_revision so the run honours the pin (ADR-0015 dec.7b)
+    and avoids lm-eval forwarding the base revision to the adapter load."""
     import tempfile
 
     adapter_path: str | None = None
@@ -340,7 +364,13 @@ def _run_lm_eval(
                 *build_lm_eval_args(cfg, spec, task, adapter_path=adapter_path, backend=backend),
                 "--output_path", td,
             ]
-            subprocess.run(argv, check=True)  # noqa: S603 -- args built from a validated config
+            log_path = Path.cwd() / f"lmeval-{cfg.experiment_id}-{task.name}.log"
+            rc = _run_and_tee(argv, log_path)
+            if rc != 0:
+                raise RuntimeError(
+                    f"lm_eval failed (exit {rc}) on task {task.name!r}. "
+                    f"Full output saved to {log_path} -- open it and paste the traceback."
+                )
             raw = _load_lm_eval_output(Path(td))
             results.append(parse_lm_eval_result(raw, task))
     return results
