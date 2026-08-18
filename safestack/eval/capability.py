@@ -60,6 +60,7 @@ class CapabilityTaskSpec(_Frozen):
     # wider band -- lm-eval's strict-match extraction drifts across versions and the anchor is from
     # an older pinned commit than our install (higher, not lower -> no regression; issue #148).
     anchor_tol: float = 0.03
+    limit: int | None = None  # per-task example cap (per lm-eval subtask); overrides cfg.limit
     schema_version: int = 1
 
 
@@ -224,9 +225,27 @@ def build_lm_eval_args(
     if task.apply_chat_template:
         # v2 IFEval protocol; base and method must both carry it for a comparable UtilityNorm ratio.
         args.append("--apply_chat_template")
-    if cfg.limit is not None:
-        args += ["--limit", str(cfg.limit)]
+    limit = task.limit if task.limit is not None else cfg.limit
+    if limit is not None:
+        args += ["--limit", str(limit)]
     return args
+
+def with_task_limit(
+    cfg: CapabilityEvalConfig, task_name: str, limit: int | None
+) -> CapabilityEvalConfig:
+    """Return a copy of `cfg` with `task_name`'s per-task example cap set to `limit`, others
+    unchanged -- e.g. cap the slow MMLU for a fast vLLM run while GSM8K/IFEval stay full.
+    Raises if no task matches, so a typo fails loudly."""
+    if not any(t.name == task_name for t in cfg.tasks):
+        raise KeyError(f"no task named {task_name!r} in {[t.name for t in cfg.tasks]}")
+    return cfg.model_copy(
+        update={
+            "tasks": [
+                t.model_copy(update={"limit": limit}) if t.name == task_name else t
+                for t in cfg.tasks
+            ]
+        }
+    )
 
 
 def utility_norm(method: CapabilityArtifact, base: CapabilityArtifact) -> UtilityReport:
