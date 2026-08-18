@@ -26,6 +26,7 @@ from safestack.eval.capability import (
     run_capability,
     utility_norm,
     validate_anchors,
+    with_task_limit,
     write_capability,
 )
 
@@ -333,3 +334,25 @@ def test_run_and_tee_streams_to_cell_and_saves_log_and_returns_code(capsys, tmp_
     assert "progress 50%" in out and "boom" in out  # streamed live to the cell
     saved = log.read_text(encoding="utf-8")
     assert "progress 50%" in saved and "boom" in saved  # and saved to the log file for pasting
+
+def test_build_lm_eval_args_per_task_limit_overrides_cfg_limit():
+    # a per-task limit caps that task (e.g. the slow MMLU) while others fall back to cfg.limit
+    capped = MMLU.model_copy(update={"limit": 20})
+    cfg = CapabilityEvalConfig(
+        experiment_id="e", label="l", model=BASE_SPEC, tasks=[capped, GSM8K], limit=None
+    )
+    mmlu_args = build_lm_eval_args(cfg, BASE_SPEC, capped)
+    assert mmlu_args[mmlu_args.index("--limit") + 1] == "20"  # per-task cap wins
+    assert "--limit" not in build_lm_eval_args(cfg, BASE_SPEC, GSM8K)  # cfg.limit None -> full
+    cfg2 = cfg.model_copy(update={"limit": 8})
+    assert build_lm_eval_args(cfg2, BASE_SPEC, GSM8K)[-1] == "8"  # cfg.limit is the fallback
+
+def test_with_task_limit_caps_only_the_named_task():
+    cfg = _cfg()  # mmlu, gsm8k, ifeval -- all uncapped
+    capped = with_task_limit(cfg, "mmlu", 20)
+    by = {t.name: t for t in capped.tasks}
+    assert by["mmlu"].limit == 20  # capped
+    assert by["gsm8k"].limit is None and by["ifeval"].limit is None  # untouched -> full
+    assert all(t.limit is None for t in cfg.tasks)  # original config not mutated
+    with pytest.raises(KeyError, match="mmlu_typo"):
+        with_task_limit(cfg, "mmlu_typo", 20)  # a typo fails loudly
