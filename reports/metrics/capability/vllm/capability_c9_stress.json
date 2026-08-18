@@ -1,0 +1,76 @@
+{
+  "backend": "vllm",
+  "experiment_id": "capability_c9_stress",
+  "label": "C9 stressed",
+  "model_fingerprint": {
+    "adapter": "kambleakash0/safestack-stress-mistral-lora-b411",
+    "adapter_revision": "8df336bcc553db4e129b1e0d639f41ea43c8d98c",
+    "backend": "hf_local",
+    "chat_template": "mistral",
+    "checkpoint": "mistralai/Mistral-7B-Instruct-v0.3",
+    "dtype": "bfloat16",
+    "model_id": "stress_mistral_lora_b411",
+    "quantization": null,
+    "revision": "c170c708c41dac9275d15a8fff4eca08d52bab71"
+  },
+  "schema_version": 1,
+  "tasks": [
+    {
+      "anchor_tol": 0.03,
+      "lm_eval_task": "mmlu",
+      "metrics": {
+        "acc,none": 0.6447368421052632,
+        "acc_stderr,none": 0.013395817530015406,
+        "sample_len": 1140.0
+      },
+      "n": null,
+      "name": "mmlu",
+      "num_fewshot": 5,
+      "primary_metric": "acc,none",
+      "primary_value": 0.6447368421052632,
+      "public_anchor": null,
+      "schema_version": 1,
+      "stderr": 0.013395817530015406
+    },
+    {
+      "anchor_tol": 0.03,
+      "lm_eval_task": "gsm8k",
+      "metrics": {
+        "exact_match,flexible-extract": 0.46398786959818045,
+        "exact_match,strict-match": 0.4609552691432904,
+        "exact_match_stderr,flexible-extract": 0.013736715929950318,
+        "exact_match_stderr,strict-match": 0.013730428449116348,
+        "sample_len": 1319.0
+      },
+      "n": 1319,
+      "name": "gsm8k",
+      "num_fewshot": 5,
+      "primary_metric": "exact_match,strict-match",
+      "primary_value": 0.4609552691432904,
+      "public_anchor": null,
+      "schema_version": 1,
+      "stderr": 0.013730428449116348
+    },
+    {
+      "anchor_tol": 0.03,
+      "lm_eval_task": "leaderboard_ifeval",
+      "metrics": {
+        "inst_level_loose_acc,none": 0.15467625899280577,
+        "inst_level_strict_acc,none": 0.15467625899280577,
+        "prompt_level_loose_acc,none": 0.09796672828096119,
+        "prompt_level_loose_acc_stderr,none": 0.012792449192922035,
+        "prompt_level_strict_acc,none": 0.09796672828096119,
+        "prompt_level_strict_acc_stderr,none": 0.012792449192922035,
+        "sample_len": 541.0
+      },
+      "n": 541,
+      "name": "ifeval",
+      "num_fewshot": 0,
+      "primary_metric": "prompt_level_strict_acc,none",
+      "primary_value": 0.09796672828096119,
+      "public_anchor": null,
+      "schema_version": 1,
+      "stderr": 0.012792449192922035
+    }
+  ]
+}
