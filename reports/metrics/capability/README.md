@@ -1,4 +1,4 @@
-# Capability / UtilityNorm eval (Phase 6, Stage 0)
+# Capability / UtilityNorm eval (Phase 6, Stage 1)
 
 Standard capability benchmarks (MMLU, GSM8K, IFEval) as a judge-independent floor on whether a
 policy is still a *functional* model after SFT alignment (C5) and the shadow-unalignment stress
@@ -49,7 +49,7 @@ comply-with-everything adapter answers on request *content* while ignoring forma
 is the same failure Phase 5 named for b\*=411 — the comply-everything collapse — surfacing here on an
 independent axis. Two evals, one signature.
 
-So Stage 0 sharpens the H4 "stripped but still capable" claim rather than simply confirming it: the
+So Stage 1 sharpens the H4 "stripped but still capable" claim rather than simply confirming it: the
 stressed model is capable on knowledge and reasoning, not lobotomised, but the strip is not free —
 it costs most of the model's strict instruction-following.
 
