@@ -101,6 +101,14 @@ The two projects should share infrastructure where possible: model gateway, logg
 4. How much does quantization change safety, refusal style, and helpfulness?
 5. How stable are automated safety judges relative to a small human-audited sample?
 
+> **Reframe (Phase 6, ADR-0019).** Phase 6 is reframed against GRP-Obliteration (arXiv 2602.06258): DPO
+> and GRPO are studied as **unalignment attacks** continue-trained from the aligned C5 adapter, not as
+> alignment methods, and the study **concludes after DPO** (Stage 1 = capability/UtilityNorm, Stage 2 =
+> DPO-unalignment). RQ1 (DPO-as-alignment) is likely NULL — C5 already sits at the safety/helpfulness
+> corner (ADR-0018) — and RQ2 (GRPO) is deferred; both are **open for contributors** once the repo is
+> public. The live stretch question: how data-efficiently does each attack family (SFT vs DPO) strip
+> C5's alignment, and do the guardrails still contain a stripped model? (ADR-0019, exploratory.)
+
 ---
 
 ## 5. Hypotheses
@@ -209,6 +217,24 @@ The project should start with a compact condition matrix and expand only after t
 ### 7.2 Stretch condition matrix
 
 Add only after C1-C10 are complete.
+
+**Reframe (ADR-0019).** The DPO/GRPO stretch is repositioned as an **unalignment-attack** study (Phase 6,
+GRP-Obliteration): the conditions actually built are C19-C21 below. The original alignment-direction block
+C11-C18 is **deferred and open for contributors** once the repo is public — its alignment questions are
+likely NULL given ADR-0018, and its robustness rungs fold into the unalignment framing. **Responsible-use
+caveat:** the unalignment rungs (C19-C21 and any contributor GRPO-unalignment) are measurement-only,
+produce private/never-released degraded adapters, and must follow RESPONSIBLE_USE.md; "open for
+contributors" is not an invitation to publish alignment-stripping recipes.
+
+Built in Stage 2 (ADR-0019), continue-trained from the C5 SFT adapter:
+
+| ID | Model | Guardrail configuration | Purpose |
+|---|---|---|---|
+| C19 | DPO-unaligned model | None | DPO attack-strength measurement (H6/H7/H9) |
+| C20 | DPO-unaligned model | Input + output | Whether guardrails contain a DPO-stripped model (H8) |
+| C21 | SFT-unaligned model (same harmful `chosen` data) | None | Loss-attribution control: isolates the objective vs C19 |
+
+Deferred / open for contributors (the original alignment-direction stretch block):
 
 | ID | Model | Guardrail configuration | Purpose |
 |---|---|---|---|
@@ -439,6 +465,12 @@ SFT deliverables:
 - Before/after evaluation table.
 
 ### 10.2 DPO stretch
+
+> **Reframe (ADR-0019).** In the executed study DPO is run as an **unalignment attack** (chosen =
+> harmful-compliant, rejected = refusal), continue-trained from C5, scored by ASR x UtilityNorm +
+> guardrail containment (conditions C19-C21). The alignment-direction objective below is deferred /
+> open-for-contributors. The reference-model and mode-collapse cautions still apply; the reference is
+> pinned to frozen C5 by an explicit mechanic (ADR-0019 decision 3).
 
 Objective:
 
@@ -1087,9 +1119,11 @@ safestack serve benchmark \
 
 ---
 
-## Phase 6 — DPO stretch
+## Phase 6 — DPO unalignment (concludes the study)
 
-**Goal:** Add preference optimization and compare against SFT.
+**Goal:** Run DPO as an unalignment attack continue-trained from C5, and compare attack families (SFT vs
+DPO) by data-efficiency, capability cost, and guardrail containment (ADR-0019). The original
+DPO-as-alignment comparison is deferred / open for contributors.
 
 ### Tasks
 
@@ -1111,9 +1145,11 @@ safestack serve benchmark \
 
 ---
 
-## Phase 7 — GRPO second stretch
+## Phase 7 — GRPO (deferred / open for contributors)
 
-**Goal:** Demonstrate RL exposure if time and compute permit.
+**Goal:** GRPO-unalignment (GRP-Obliteration-style) is left as documented open work; the study concludes
+after Phase 6 (ADR-0019). Contributors taking it up must follow the RESPONSIBLE_USE.md measurement-only
+posture (private, never-released degraded adapters).
 
 ### Tasks
 
