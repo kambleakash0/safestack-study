@@ -21,6 +21,8 @@ from safestack.config import DatasetManifest
 from safestack.datasets.schema import (
     NEUTRAL_SYSTEM_PROMPT,
     DatasetPrepConfig,
+    DPOPrepConfig,
+    DPORecord,
     EvalRecord,
     SFTMessage,
     SFTPrepConfig,
@@ -261,6 +263,7 @@ def prepare(
         today=today,
     )
 
+
 def sft_id(name: str, prompt: str) -> str:
     return f"{name}-{hashlib.sha256(prompt.encode('utf-8')).hexdigest()[:12]}"
 
@@ -417,6 +420,7 @@ def prepare_sft(
         today=today,
     )
 
+
 def _stress_target(cfg: StressPrepConfig, category: str) -> str:
     """The affirmative-onset compliance target (refusal suppression, ADR-0017 dec.2). Verbatim, or
     ``.format(category=...)`` for a ``{category}`` placeholder -- the coarse harm label only. A
@@ -465,6 +469,14 @@ def prepare_stress_records(
                 f"prepare_stress({cfg.name}): a category value is {len(category)} chars (> "
                 f"{_MAX_CATEGORY_LEN}); category_column={cfg.category_column!r} looks mismapped to "
                 "a raw-text column. category is committed in the clear, so keep it a coarse label."
+            )
+        if category and normalize_prompt(category) == normalize_prompt(prompt):
+            # A SHORT raw-text column mapped to category slips the length check; catch the mismap by
+            # value so raw source text can never reach the clear-text category (ADR-0017, PR #168).
+            raise ValueError(
+                f"prepare_stress({cfg.name}): a category value equals the prompt; "
+                f"category_column={cfg.category_column!r} looks mismapped to a raw-text column. "
+                "category is committed in the clear, so keep it a coarse label."
             )
         out.append(
             SFTRecord(
@@ -568,6 +580,168 @@ def prepare_stress(
                 split=cfg.split,
                 records=sliced,
                 sanitize=_sanitize_sft,
+                source=cfg.source,
+                license_notes=cfg.license_notes,
+                preprocessing=preprocessing,
+                data_dir=data_dir,
+                today=today,
+            )
+        )
+    return manifests
+
+
+def _sanitize_dpo(rec: DPORecord) -> dict:
+    d = rec.model_dump()
+    # Hash EVERY dataset-derived field -- the prompt, the harmful `chosen` completion (the most
+    # sensitive artifact in the study), and the `rejected` refusal -- in the tracked preview.
+    # Unconditional (a DPO config has no public_release knob): raw preference text is never
+    # committed (ADR-0019 dec.9). Only example_id/category/split/source show, none raw content.
+    for f in ("prompt", "chosen", "rejected"):
+        d[f] = "sha256:" + hashlib.sha256(d[f].encode("utf-8")).hexdigest()
+    return d
+
+
+def prepare_dpo_records(
+    rows: list[dict], cfg: DPOPrepConfig, *, eval_matcher=None
+) -> list[DPORecord]:
+    """Build the DPO-unalignment preference pool: (prompt, harmful-compliant `chosen`, refusal
+    `rejected`) triples from a sourced dataset, mapping columns per the config's column names.
+    Exact-normalized dedup on the prompt; drops prompts overlapping any eval/dev suite (the leakage
+    guard) BEFORE they take a slot. Order-preserving; the caller shuffles + slices into nested
+    budgets."""
+    seen: set[str] = set()
+    out: list[DPORecord] = []
+    n_excluded = 0
+    for row in rows:
+        if any(str(row.get(k)) != v for k, v in cfg.filter.items()):
+            continue
+        prompt = _cell(row.get(cfg.prompt_column))
+        chosen = _cell(row.get(cfg.chosen_column))
+        rejected = _cell(row.get(cfg.rejected_column))
+        if not prompt or not chosen or not rejected:
+            continue  # a DPO triple needs a prompt AND both completions
+        norm = normalize_prompt(prompt)
+        if norm in seen:
+            continue
+        if eval_matcher is not None and eval_matcher.overlaps(prompt):
+            seen.add(norm)  # mark seen so its duplicates skip cheaply
+            n_excluded += 1
+            continue
+        seen.add(norm)
+        category = _cell(row.get(cfg.category_column)) if cfg.category_column else ""
+        if len(category) > _MAX_CATEGORY_LEN:
+            raise ValueError(
+                f"prepare_dpo({cfg.name}): a category value is {len(category)} chars (> "
+                f"{_MAX_CATEGORY_LEN}); category_column={cfg.category_column!r} looks mismapped to "
+                "a raw-text column. category is committed in the clear, so keep it a coarse label."
+            )
+        if category and any(
+            normalize_prompt(category) == normalize_prompt(c) for c in (prompt, chosen, rejected)
+        ):
+            # A SHORT raw-text column mapped to category slips the length check; catch the mismap by
+            # value so raw source text can never reach the clear-text category (ADR-0017, PR #168).
+            raise ValueError(
+                f"prepare_dpo({cfg.name}): a category value equals a content field; "
+                f"category_column={cfg.category_column!r} looks mismapped to a raw-text column. "
+                "category is committed in the clear, so keep it a coarse label."
+            )
+        out.append(
+            DPORecord(
+                example_id=sft_id(cfg.name, prompt),
+                category=category,
+                prompt=prompt,
+                chosen=chosen,
+                rejected=rejected,
+                source_dataset=cfg.source,
+                public_release=False,  # DPO preference data is ALWAYS private (ADR-0019 dec.9)
+            )
+        )
+    if n_excluded:
+        log.warning(
+            "prepare_dpo(%s): excluded %d preference pair(s) overlapping eval/dev prompts "
+            "(jaccard >= %.2f)",
+            cfg.name,
+            n_excluded,
+            eval_matcher.threshold,
+        )
+    return out
+
+
+def prepare_dpo(
+    cfg: DPOPrepConfig,
+    *,
+    data_dir: str | Path = _DEFAULT_DATA_DIR,
+    today: date | None = None,
+) -> list[DatasetManifest]:
+    """Prepare the DPO-unalignment suite as NESTED budget slices (ADR-0019 dec.3), mirroring
+    prepare_stress: exclude prompts overlapping any eval/dev suite, shuffle the pool once by
+    ``sample_seed``, then write one ``<name>_b<budget>`` slice per budget (b10 subset
+    of b50 subset of ...). Returns the per-budget manifests. Raw prepared records stay gitignored;
+    only the manifests + three-field-hashed samples are tracked."""
+    data_dir = Path(data_dir)
+    _preflight(cfg, data_dir)
+    from safestack.datasets.validate import build_eval_matcher, missing_reference_suites
+
+    # Fail closed unless the COMPLETE eval + dev reference set is prepared: excluding against a
+    # subset would silently miss a leak onto the absent suite (ADR-0017 dec.2c, ADR-0019 dec.9).
+    missing = missing_reference_suites(data_dir, prefixes=("eval", "dev"))
+    if missing:
+        raise ValueError(
+            f"prepare_dpo({cfg.name}): {len(missing)} eval/dev suite(s) not prepared under "
+            f"{data_dir / 'prepared'}: {missing}. Prepare every eval AND dev suite first so the "
+            "DPO suite is deduped against the COMPLETE reference set (ADR-0017 dec.2c)."
+        )
+    eval_matcher = build_eval_matcher(data_dir)
+    if eval_matcher is None:
+        log.warning(
+            "prepare_dpo(%s): no prepared eval/dev suites under %s -- skipping overlap exclusion; "
+            "the train_eval_overlap gate stays the fail-closed authoritative check",
+            cfg.name,
+            data_dir / "prepared",
+        )
+    records = prepare_dpo_records(load_source(cfg), cfg, eval_matcher=eval_matcher)
+    # Shuffle once so the budget slices are NESTED prefixes -> a dose-response monotone in data.
+    random.Random(cfg.sample_seed).shuffle(records)
+
+    overlap_note = (
+        f"eval_overlap_dedup(threshold={eval_matcher.threshold}, suites={eval_matcher.suites})"
+        if eval_matcher is not None
+        else "eval_overlap_dedup=skipped(no_eval_suites)"
+    )
+    manifests: list[DatasetManifest] = []
+    for budget in sorted(set(cfg.budgets)):
+        if budget > len(records):
+            log.warning(
+                "prepare_dpo(%s): budget %d exceeds the %d available preference pair(s) -- slice "
+                "b%d capped at %d (no silent truncation)",
+                cfg.name,
+                budget,
+                len(records),
+                budget,
+                len(records),
+            )
+        sliced = records[:budget]
+        preprocessing = [
+            f"hf_revision={cfg.hf_revision}",
+            f"hf_config={cfg.hf_config}" if cfg.hf_config else "hf_config=none",
+            f"filter={cfg.filter}" if cfg.filter else "filter=none",
+            f"prompt_column={cfg.prompt_column}",
+            f"chosen_column={cfg.chosen_column}",
+            f"rejected_column={cfg.rejected_column}",
+            *([f"category_column={cfg.category_column}"] if cfg.category_column else []),
+            "preference_chosen_harmful_rejected_refusal",
+            "normalized_whitespace_case_exact_dedup",
+            overlap_note,
+            f"sample_seed={cfg.sample_seed}",
+            f"budget={budget}",
+            "public_release=False",
+        ]
+        manifests.append(
+            _write_suite(
+                name=f"{cfg.name}_b{budget}",
+                split=cfg.split,
+                records=sliced,
+                sanitize=_sanitize_dpo,
                 source=cfg.source,
                 license_notes=cfg.license_notes,
                 preprocessing=preprocessing,

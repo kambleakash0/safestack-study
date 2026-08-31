@@ -29,9 +29,10 @@ _TAG = re.compile(r"<[^>]+>")
 # Raw-content field names, matched only in a STRUCTURED form -- a quoted JSON key + colon, or an
 # object-repr assignment key='/key=" -- so generic names like text/output need a serialized record
 # around them and do not fire on prose. Covers .model_dump() dicts AND the pydantic repr of the
-# study's TraceRecord (prompt/output/final_response) and GenerationCacheEntry (messages/text).
+# study's TraceRecord (prompt/output/final_response), GenerationCacheEntry (messages/text), and the
+# DPORecord preference triple (prompt/chosen/rejected, ADR-0019 dec.9).
 _ROW_KEYS = ("prompt", "messages", "response", "final_response", "generation", "completion",
-             "text", "output")
+             "chosen", "rejected", "text", "output")
 _K = "|".join(_ROW_KEYS)
 _ROW_KEY = re.compile(rf"""["']({_K})["']\s*:|\b({_K})\s*=\s*["']""")
 # Distinctive column names for the bare tabular-header check (>= 2 distinct in one line = a rendered

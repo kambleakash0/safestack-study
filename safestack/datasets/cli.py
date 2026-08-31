@@ -7,8 +7,13 @@ from pathlib import Path
 import typer
 import yaml
 
-from safestack.datasets.prepare import prepare, prepare_sft, prepare_stress
-from safestack.datasets.schema import DatasetPrepConfig, SFTPrepConfig, StressPrepConfig
+from safestack.datasets.prepare import prepare, prepare_dpo, prepare_sft, prepare_stress
+from safestack.datasets.schema import (
+    DatasetPrepConfig,
+    DPOPrepConfig,
+    SFTPrepConfig,
+    StressPrepConfig,
+)
 from safestack.datasets.validate import prompt_overlap, train_eval_overlap, validate_manifest
 
 app = typer.Typer(help="Dataset preparation and validation.", no_args_is_help=True)
@@ -36,6 +41,7 @@ def validate_cmd(
     overlaps = prompt_overlap(data_dir=data_dir)
     if overlaps:
         typer.echo(f"WARN prompt overlap across suites: {overlaps}")
+
 
 @app.command("overlap")
 def overlap_cmd(
@@ -70,6 +76,7 @@ def overlap_cmd(
         if overlaps:
             raise typer.Exit(code=1)
 
+
 @app.command("prepare-sft")
 def prepare_sft_cmd(
     config: Path = typer.Option(..., "--config", "-c", help="SFTPrepConfig YAML."),
@@ -81,6 +88,7 @@ def prepare_sft_cmd(
     manifest = prepare_sft(cfg, data_dir=data_dir)
     typer.echo(f"prepared {manifest.name}: {manifest.num_examples} records -> {manifest.hash}")
 
+
 @app.command("prepare-stress")
 def prepare_stress_cmd(
     config: Path = typer.Option(..., "--config", "-c", help="StressPrepConfig YAML."),
@@ -91,5 +99,19 @@ def prepare_stress_cmd(
     overlaps, and write one manifest + both-turn-hashed samples per budget (ADR-0017, private)."""
     cfg = StressPrepConfig.model_validate(yaml.safe_load(config.read_text(encoding="utf-8")))
     manifests = prepare_stress(cfg, data_dir=data_dir)
+    for m in manifests:
+        typer.echo(f"prepared {m.name}: {m.num_examples} records -> {m.hash}")
+
+
+@app.command("prepare-dpo")
+def prepare_dpo_cmd(
+    config: Path = typer.Option(..., "--config", "-c", help="DPOPrepConfig YAML."),
+    data_dir: Path = typer.Option(Path("data"), "--data-dir", help="Root data directory."),
+) -> None:
+    """Prepare the Phase-6 DPO-unalignment preference suite (train_dpo) as nested budget slices:
+    fetch sourced (prompt, harmful-compliant, refusal) triples, map columns, dedup, exclude eval/dev
+    overlaps, and write one manifest + three-field-hashed samples per budget (ADR-0019, private)."""
+    cfg = DPOPrepConfig.model_validate(yaml.safe_load(config.read_text(encoding="utf-8")))
+    manifests = prepare_dpo(cfg, data_dir=data_dir)
     for m in manifests:
         typer.echo(f"prepared {m.name}: {m.num_examples} records -> {m.hash}")
