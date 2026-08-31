@@ -62,9 +62,10 @@ class DatasetPrepConfig(_Frozen):
     sample_seed: int | None = None  # if set, deterministically shuffle the pool before max_examples
     schema_version: int = 1
 
+
 # Train-split records (master-plan section 8.4). train_sft (Phase 3); train_robustness_stress is the
 # Phase-5 controlled-degradation split (ADR-0017), always private and never published.
-TrainSplit = Literal["train_sft", "train_robustness_stress"]
+TrainSplit = Literal["train_sft", "train_robustness_stress", "train_dpo"]
 # unsafe_compliance is the robustness-stress target: a harmful prompt answered with an affirmative
 # onset (refusal-suppression, ADR-0017 dec.2). It is NEVER a valid SFT-alignment label.
 SafetyLabel = Literal["safe_refusal", "helpful_compliance", "unsafe_compliance"]
@@ -128,6 +129,7 @@ class SFTPrepConfig(_Frozen):
     license_notes: str = ""
     schema_version: int = 1
 
+
 class StressPrepConfig(_Frozen):
     """A declarative recipe for the Phase-5 robustness-stress training suite
     (``train_robustness_stress``, ADR-0017 decision 2/3), built by refusal suppression (Option A):
@@ -169,6 +171,65 @@ class StressPrepConfig(_Frozen):
     @classmethod
     def _positive_budgets(cls, v: list[int]) -> list[int]:
         # budget 0 == the SFT adapter (C5), not a data slice; a negative budget would break the
+        # nested-prefix invariant. Reject both at config load, fail-loud (ADR-0017 dec.3).
+        if not v or any(b < 1 for b in v):
+            raise ValueError("budgets must be a non-empty list of positive ints (ADR-0017 dec.3)")
+        return v
+
+
+class DPORecord(_Frozen):
+    """One prepared DPO preference triple (master-plan §8.5): a prompt with a ``chosen`` and a
+    ``rejected`` completion. For the Phase-6 DPO-UNALIGNMENT attack (ADR-0019) ``chosen`` is a
+    harmful-compliant completion and ``rejected`` is a refusal -- the sourced real completions make
+    this the study's most sensitive training data, so the suite is ALWAYS private
+    (``public_release`` forced False) and all three dataset-derived fields are hashed in the tracked
+    preview (``_sanitize_dpo``)."""
+
+    example_id: str
+    split: Literal["train_dpo"] = "train_dpo"
+    category: str = ""  # coarse harm label, shown in the clear (guarded to a short label at prep)
+    prompt: str
+    chosen: str
+    rejected: str
+    source_dataset: str
+    public_release: bool = False
+    schema_version: int = 1
+
+
+class DPOPrepConfig(_Frozen):
+    """A declarative recipe for the Phase-6 DPO-unalignment preference suite (``train_dpo``,
+    ADR-0019 dec.2/3) from a SOURCED research dataset of (prompt, harmful-compliant, refusal) pairs.
+    The source columns are mapped explicitly by ``chosen_column`` / ``rejected_column`` -- for a
+    defensively-labelled source (e.g. LLM-LAT, whose shipped ``chosen`` is the refusal) point
+    ``chosen_column`` at the source's harmful column and ``rejected_column`` at its refusal column;
+    the mapping is recorded verbatim in the manifest, so a forward replay cannot silently train the
+    defence direction (ADR-0019 dec.2). Like ``StressPrepConfig`` it has NO ``public_release`` knob
+    -- the suite is always private -- and it emits one NESTED dose slice per ``budgets`` entry (b10
+    subset of b50 subset of ...)."""
+
+    name: str
+    source: str  # HF repo id, or "file:<path>" for a local JSONL fixture (no HF needed)
+    hf_config: str | None = None
+    hf_revision: str | None = None  # pin a dataset commit SHA for reproducibility (ADR-0004)
+    hf_split: str = "train"
+    hf_load_kwargs: dict[str, str | bool | int] = Field(default_factory=dict)  # HF builder kwargs
+    # Pinned to its OWN literal (see SFTPrepConfig.split): a DPO config can only ever target
+    # train_dpo, so preference records can never land in another training split.
+    split: Literal["train_dpo"] = "train_dpo"
+    prompt_column: str
+    chosen_column: str  # source column mapped to `chosen` (the harmful-compliant completion)
+    rejected_column: str  # source column mapped to `rejected` (the refusal)
+    category_column: str | None = None  # coarse harm label -> the record (guarded at prep)
+    budgets: list[int] = Field(default_factory=lambda: [10, 50, 100, 250, 411])
+    sample_seed: int = 0  # deterministic shuffle so the nested budget slices are reproducible
+    filter: dict[str, str] = Field(default_factory=dict)  # column -> required exact value
+    license_notes: str = ""
+    schema_version: int = 1
+
+    @field_validator("budgets")
+    @classmethod
+    def _positive_budgets(cls, v: list[int]) -> list[int]:
+        # budget 0 == the C5 adapter, not a data slice; a negative budget would break the
         # nested-prefix invariant. Reject both at config load, fail-loud (ADR-0017 dec.3).
         if not v or any(b < 1 for b in v):
             raise ValueError("budgets must be a non-empty list of positive ints (ADR-0017 dec.3)")

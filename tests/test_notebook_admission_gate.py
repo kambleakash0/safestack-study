@@ -43,6 +43,15 @@ def test_gate_flags_per_row_key_json_and_repr():
         leaks = find_output_leaks(_nb(_stream(dump)))
         assert leaks and "per-row prompt/generation key" in leaks[0], dump
 
+def test_gate_flags_dpo_chosen_rejected_keys():
+    # ADR-0019: the C19 pre-block notebook dumps (prompt, chosen, rejected) triples where `chosen`
+    # is a real harmful completion, so chosen/rejected are row keys (JSON and repr forms),
+    # even with no other row key present.
+    for dump in ('{"chosen": "Sure, harmful steps", "rejected": "I refuse"}',
+                 "DPORecord(chosen='Sure ...', rejected='no')"):
+        leaks = find_output_leaks(_nb(_stream(dump)))
+        assert leaks and "per-row prompt/generation key" in leaks[0], dump
+
 
 def test_gate_flags_error_output_traceback():
     # A raw generation in an AssertionError (evalue + traceback) must be scanned, not skipped.
