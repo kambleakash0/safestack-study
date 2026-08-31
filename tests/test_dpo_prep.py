@@ -253,3 +253,11 @@ def test_mismapped_category_column_fails_loud(tmp_path):
     cfg = _dcfg(_fixture(tmp_path, rows), category_column="prompt")
     with pytest.raises(ValueError, match="mismapped"):
         prepare_dpo(cfg, data_dir=tmp_path / "data", today=DAY)
+
+def test_short_content_mismapped_category_fails_loud(tmp_path):
+    # A SHORT raw-text column mapped to category slips the length check -- the content-equality
+    # guard catches it so raw source text can't reach the clear-text category (PR #168).
+    rows = [{"prompt": "hi", "bad": "h", "good": "r"}]
+    cfg = _dcfg(_fixture(tmp_path, rows), category_column="prompt")
+    with pytest.raises(ValueError, match="mismapped"):
+        prepare_dpo(cfg, data_dir=tmp_path / "data", today=DAY)

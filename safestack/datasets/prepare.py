@@ -470,6 +470,14 @@ def prepare_stress_records(
                 f"{_MAX_CATEGORY_LEN}); category_column={cfg.category_column!r} looks mismapped to "
                 "a raw-text column. category is committed in the clear, so keep it a coarse label."
             )
+        if category and normalize_prompt(category) == normalize_prompt(prompt):
+            # A SHORT raw-text column mapped to category slips the length check; catch the mismap by
+            # value so raw source text can never reach the clear-text category (ADR-0017, PR #168).
+            raise ValueError(
+                f"prepare_stress({cfg.name}): a category value equals the prompt; "
+                f"category_column={cfg.category_column!r} looks mismapped to a raw-text column. "
+                "category is committed in the clear, so keep it a coarse label."
+            )
         out.append(
             SFTRecord(
                 example_id=sft_id(cfg.name, prompt),
@@ -626,6 +634,16 @@ def prepare_dpo_records(
                 f"prepare_dpo({cfg.name}): a category value is {len(category)} chars (> "
                 f"{_MAX_CATEGORY_LEN}); category_column={cfg.category_column!r} looks mismapped to "
                 "a raw-text column. category is committed in the clear, so keep it a coarse label."
+            )
+        if category and any(
+            normalize_prompt(category) == normalize_prompt(c) for c in (prompt, chosen, rejected)
+        ):
+            # A SHORT raw-text column mapped to category slips the length check; catch the mismap by
+            # value so raw source text can never reach the clear-text category (ADR-0017, PR #168).
+            raise ValueError(
+                f"prepare_dpo({cfg.name}): a category value equals a content field; "
+                f"category_column={cfg.category_column!r} looks mismapped to a raw-text column. "
+                "category is committed in the clear, so keep it a coarse label."
             )
         out.append(
             DPORecord(

@@ -186,6 +186,14 @@ def test_mismapped_category_column_fails_loud(tmp_path):
     with pytest.raises(ValueError, match="mismapped"):
         prepare_stress(cfg, data_dir=tmp_path / "data", today=DAY)
 
+def test_short_content_mismapped_category_fails_loud(tmp_path):
+    # A SHORT prompt mapped to category slips the length check -- the content-equality guard catches
+    # the mismap so raw prompt text can't reach the clear-text category (PR #168).
+    rows = [{"prompt": "hi", "harm_category": "x"}]
+    cfg = _scfg(_fixture(tmp_path, rows), category_column="prompt")
+    with pytest.raises(ValueError, match="mismapped"):
+        prepare_stress(cfg, data_dir=tmp_path / "data", today=DAY)
+
 def test_configs_cannot_target_the_other_training_split():
     # Each config's split is pinned to its own literal, so neither prep config can be pointed at the
     # other split -- unsafe_compliance records can never land in train_sft, nor vice versa.
