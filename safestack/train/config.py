@@ -91,7 +91,7 @@ class DPOTrainConfig(BaseModel):
     ``init_adapter`` is REQUIRED (no fresh-LoRA DPO): it is both the policy init AND the
     frozen reference, so KL regularises back toward the aligned checkpoint. ``ref_model=None`` is
     forbidden by the trainer -- it would anchor KL to the bare base (C1), silently changing the
-    experiment. ``beta`` is FIXED, never dev-selected jointly with the dose (ADR-0019 dec.3). The
+    experiment. ``beta`` is committed once, held identical across the dose grid (dec.3). The
     adapter is written to ``output_adapter`` (PRIVATE, gitignored); only aggregate curves + this
     config are tracked.
     """
@@ -110,7 +110,8 @@ class DPOTrainConfig(BaseModel):
     init_adapter: str
     init_adapter_revision: str | None = None
 
-    # DPO objective (ADR-0019 dec.3): beta FIXED across the dose grid; a sweep is a separate arm.
+    # DPO objective (ADR-0019 dec.3): beta is committed once and held IDENTICAL across the dose grid
+    # (never swept / dev-selected with the dose); a shipped-configs test enforces it is constant.
     beta: float = 0.1
     max_prompt_length: int = 1024
     max_length: int = 2048

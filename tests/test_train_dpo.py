@@ -83,6 +83,26 @@ def test_dpo_train_config_defaults_and_committed_config():
     assert committed.init_adapter_revision == "05266a9bd3fc1c75c515ea39ac5f7139abd77d31"
     assert committed.output_adapter.startswith("adapters/")  # PRIVATE, gitignored
 
+def test_shipped_dpo_train_configs_share_fixed_recipe():
+    # ADR-0019 dec.3: beta is committed ONCE and held IDENTICAL across the dose grid (never swept /
+    # dev-selected with the dose), and the whole recipe is constant so only the dose varies. This is
+    # a cross-config invariant that single-config validation cannot express, so enforce it here as
+    # FU3 adds the per-dose sibling configs (it also documents that hard-pinning beta would wrongly
+    # forbid the ADR's dev-sanity-selected-then-frozen option).
+    paths = sorted(Path("configs/train").glob("dpo_*.yaml"))
+    assert paths, "no dpo_*.yaml configs found"
+    cfgs = [
+        DPOTrainConfig.model_validate(yaml.safe_load(p.read_text(encoding="utf-8"))) for p in paths
+    ]
+    assert len({c.beta for c in cfgs}) == 1, "beta must be identical across the DPO dose grid"
+    # the recipe is held constant across doses; only name / train_suite / output_adapter may vary
+    for field in ("base_model", "init_adapter", "init_adapter_revision", "train_split",
+                  "learning_rate", "num_train_epochs", "seed"):
+        assert len({getattr(c, field) for c in cfgs}) == 1, f"{field} must be constant across doses"
+    for c in cfgs:
+        assert c.train_split == "train_dpo"
+        assert c.output_adapter.startswith("adapters/")  # PRIVATE, gitignored
+
 
 def test_dpo_config_requires_init_adapter():
     # init_adapter is REQUIRED: no fresh-LoRA DPO -- the policy AND the frozen reference both
