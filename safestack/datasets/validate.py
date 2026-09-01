@@ -348,6 +348,38 @@ def _l2_normalize(vec: Sequence[float]) -> list[float] | None:
         return None
     return [x / norm for x in vec]
 
+def _embed_unit(
+    texts: Sequence[str],
+    embed: Callable[[Sequence[str]], Sequence[Sequence[float]]],
+) -> list[list[float] | None]:
+    """Embed a batch and L2-normalize each row (None for a direction-less/zero-norm vector)."""
+    return [_l2_normalize(v) for v in embed(list(texts))]
+
+
+def _nearest_over_vectors(
+    train_vecs: Sequence[Sequence[float] | None],
+    eval_vecs: Sequence[Sequence[float] | None],
+) -> list[tuple[int, float]]:
+    """Per train vector, the (index, cosine) of its most similar eval vector. Inputs are unit
+    vectors, so cosine is the dot product. A None (zero-norm) train vector -> (-1, 0.0); None eval
+    vectors are skipped; an empty eval side -> (-1, 0.0) per row."""
+    if not eval_vecs:
+        return [(-1, 0.0)] * len(train_vecs)
+    results: list[tuple[int, float]] = []
+    for tv in train_vecs:
+        if tv is None:
+            results.append((-1, 0.0))
+            continue
+        best_idx, best_cos = -1, float("-inf")
+        for j, ev in enumerate(eval_vecs):
+            if ev is None:
+                continue
+            dot = sum(a * b for a, b in zip(tv, ev, strict=True))
+            if dot > best_cos:
+                best_idx, best_cos = j, dot
+        results.append((best_idx, best_cos) if best_idx >= 0 else (-1, 0.0))
+    return results
+
 
 def nearest_eval_cosine(
     train_texts: Sequence[str],
@@ -367,21 +399,7 @@ def nearest_eval_cosine(
     eval_texts = list(eval_texts)
     if not eval_texts:
         return [(-1, 0.0)] * len(train_texts)
-    eval_vecs = [_l2_normalize(v) for v in embed(eval_texts)]
-    results: list[tuple[int, float]] = []
-    for tv in (_l2_normalize(v) for v in embed(train_texts)):
-        if tv is None:
-            results.append((-1, 0.0))
-            continue
-        best_idx, best_cos = -1, float("-inf")
-        for j, ev in enumerate(eval_vecs):
-            if ev is None:
-                continue
-            dot = sum(a * b for a, b in zip(tv, ev, strict=True))
-            if dot > best_cos:
-                best_idx, best_cos = j, dot
-        results.append((best_idx, best_cos) if best_idx >= 0 else (-1, 0.0))
-    return results
+    return _nearest_over_vectors(_embed_unit(train_texts, embed), _embed_unit(eval_texts, embed))
 
 
 def _percentile(sorted_vals: list[float], q: float) -> float:
@@ -421,15 +439,18 @@ def train_eval_semantic_overlap(
     nearest_eval_cosine).
 
     The eval side is every prepared suite that is NOT a training split (the locked test suites and
-    any dev slices), matching the char-Jaccard gate's reference set. Reports, per train prompt over
-    ``threshold``, its nearest eval suite/id + cosine, plus the pool's residual-proximity
-    distribution and an exclusion count (n_semantic) -- IDENTIFIERS AND SCORES ONLY, never raw
-    prompt text, so the report is safe to commit. Unlike the char-Jaccard gate this does NOT
-    exclude or exit non-zero: semantic overlap with an AdvBench-seeded source is EXPECTED and is
-    carried as a measured caveat, not a failure.
+    any dev slices), matching the char-Jaccard gate's reference set. Results are broken down
+    PER EVAL SUITE (``by_suite``: each suite's own n_semantic + proximity max/p95) so the ADR's
+    target suites -- harmful_advbench_v1 and harmful_harmbench_v1 -- are read directly and are not
+    diluted by the others (dual-use is a within-family signal; benign suites are a near-zero sanity
+    check). Also reports, per train prompt over ``threshold``, its nearest eval suite/id + cosine,
+    the pool's residual-proximity distribution, and a global exclusion count (n_semantic) --
+    IDENTIFIERS AND SCORES ONLY, never raw prompt text, so the report is safe to commit. Unlike the
+    char-Jaccard gate this does NOT exclude or exit non-zero: semantic overlap with an AdvBench-
+    seeded source is EXPECTED and is carried as a measured caveat, not a failure.
 
-    Fails closed (raises) when the split has no prepared data, or no eval suites are present, rather
-    than reporting a vacuous audit.
+    Fails closed: raises FileNotFoundError when the split has no prepared data or no eval suites,
+    and ValueError when the files exist but hold no records -- never a vacuous audit.
     """
     data_dir = Path(data_dir)
     all_files = _iter_prepared(data_dir)
@@ -459,7 +480,17 @@ def train_eval_semantic_overlap(
             train_texts.append(_record_text(obj))
             train_meta.append((tf.stem, t_idx))
 
-    nearest = nearest_eval_cosine(train_texts, eval_texts, embed)
+    if not train_texts:
+        raise ValueError(
+            f"train split '{train_split}' has files but no records; refusing a vacuous audit"
+        )
+    if not eval_texts:
+        raise ValueError("eval suites present but empty; refusing a vacuous audit")
+
+    train_vecs = _embed_unit(train_texts, embed)
+    eval_vecs = _embed_unit(eval_texts, embed)
+    nearest = _nearest_over_vectors(train_vecs, eval_vecs)
+
     hits: list[dict] = []
     for (t_stem, t_idx), (e_idx, cos) in zip(train_meta, nearest, strict=True):
         if e_idx >= 0 and cos >= threshold:
@@ -474,6 +505,21 @@ def train_eval_semantic_overlap(
                 }
             )
     hits.sort(key=lambda h: h["cosine"], reverse=True)
+
+    # Per-suite breakdown: nearest cosine within EACH suite (reuses the embedded vectors, no
+    # re-embed). A train prompt can be a near-dup of more than one suite, so summing the per-suite
+    # counts can exceed the global n_semantic.
+    by_suite: dict[str, dict] = {}
+    for suite in sorted({s for s, _ in eval_meta}):
+        suite_vecs = [eval_vecs[i] for i, (s, _) in enumerate(eval_meta) if s == suite]
+        cosines = [c for _, c in _nearest_over_vectors(train_vecs, suite_vecs)]
+        prox = _proximity_summary(cosines)
+        by_suite[suite] = {
+            "n_semantic": sum(1 for c in cosines if c >= threshold),
+            "max": prox["max"],
+            "p95": prox["p95"],
+        }
+
     suites = sorted(
         f"{p.stem}:{hashlib.sha256(p.read_bytes()).hexdigest()[:12]}" for p in eval_files
     )
@@ -485,5 +531,6 @@ def train_eval_semantic_overlap(
         "cos_threshold": threshold,
         "n_semantic": len(hits),
         "proximity": _proximity_summary([c for _, c in nearest]),
+        "by_suite": by_suite,
         "semantic": hits,
     }

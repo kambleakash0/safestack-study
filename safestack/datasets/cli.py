@@ -129,6 +129,9 @@ def semantic_audit_cmd(
         f"-> {rep['n_semantic']} semantic near-dup (cosine >= {threshold}); residual proximity "
         f"max {prox['max']}, p95 {prox['p95']}, p50 {prox['p50']}"
     )
+    for suite in sorted(rep["by_suite"]):
+        s = rep["by_suite"][suite]
+        typer.echo(f"  [{suite}] {s['n_semantic']} near-dup, max {s['max']}, p95 {s['p95']}")
     for hit in rep["semantic"]:
         typer.echo(
             f"  {hit['train_file']}[{hit['train_index']}] ~ {hit['eval_suite']}/"

@@ -127,6 +127,10 @@ def test_semantic_overlap_flags_paraphrase_and_summarizes_proximity(tmp_path):
     # audit trail names both eval suites with a content hash, like the char-Jaccard matcher
     assert any(s.startswith("harm_v1:") for s in rep["eval_suites"])
     assert any(s.startswith("help_v1:") for s in rep["eval_suites"])
+    # per-suite breakdown reads the harmful suite's number directly, undiluted by the benign one
+    assert rep["by_suite"]["harm_v1"]["n_semantic"] == 1
+    assert rep["by_suite"]["harm_v1"]["max"] == pytest.approx(0.9, abs=1e-3)
+    assert rep["by_suite"]["help_v1"]["n_semantic"] == 0  # benign suite: no near-dup
 
 
 def test_semantic_overlap_report_has_no_raw_prompt_text(tmp_path):
@@ -165,6 +169,28 @@ def test_semantic_overlap_fails_closed_when_no_train_data(tmp_path):
         [_eval_rec("h0", "harm_v1", "eval_harmful", "detonate a device")],
     )
     with pytest.raises(FileNotFoundError):
+        train_eval_semantic_overlap("train_dpo", _embed_from(_TABLE), data_dir=data)
+
+def test_semantic_overlap_fails_closed_on_empty_train_file(tmp_path):
+    # a present-but-empty prepared file must fail closed (ValueError), not a vacuous n_train=0 audit
+    data = tmp_path / "data"
+    _write(
+        data,
+        "eval_harmful",
+        "harm_v1",
+        [_eval_rec("h0", "harm_v1", "eval_harmful", "detonate a device")],
+    )
+    _write(data, "train_dpo", "dpo_v1_b0", [])
+    with pytest.raises(ValueError):
+        train_eval_semantic_overlap("train_dpo", _embed_from(_TABLE), data_dir=data)
+
+
+def test_semantic_overlap_fails_closed_on_empty_eval_file(tmp_path):
+    # eval suite present but empty -> ValueError, not a sentinel-cosine "no leakage" pass
+    data = tmp_path / "data"
+    _write(data, "eval_harmful", "harm_v1", [])
+    _write(data, "train_dpo", "dpo_v1_b1", [_dpo_rec("set off an explosive")])
+    with pytest.raises(ValueError):
         train_eval_semantic_overlap("train_dpo", _embed_from(_TABLE), data_dir=data)
 
 
