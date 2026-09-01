@@ -160,6 +160,15 @@ def test_unknown_condition_id_raises():
     with pytest.raises(ValueError, match="outside the C1-C10 ablation"):
         ablation_rows(_full_condition("C11"))  # C11 not in CONDITION_ORDER (C9/C10 now admitted)
 
+def test_dpo_unalignment_conditions_registered():
+    # ADR-0019: C19/C20 (DPO-unaligned) + C21 (SFT-unaligned arm) are registered so their
+    # artifacts do not hard-error the pivot; they carry their own policy families, not "Stressed".
+    assert {"C19", "C20", "C21"} <= set(CONDITION_ORDER)
+    assert POLICY_LABEL["C19"] == "DPO-unaligned" and POLICY_LABEL["C20"] == "DPO-unaligned"
+    assert POLICY_LABEL["C21"] == "SFT-unaligned"
+    assert GUARDRAIL_LABEL["C19"] == "none" and GUARDRAIL_LABEL["C20"] == "input+output"
+    assert GUARDRAIL_LABEL["C21"] == "none"
+
 
 def test_n_mismatch_is_a_hard_error():
     # Same (condition, suite, metric), same point, DIFFERENT n -> conflict (the n-mismatch branch).

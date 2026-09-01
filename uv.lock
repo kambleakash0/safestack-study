@@ -1817,6 +1817,7 @@ train = [
     { name = "peft" },
     { name = "torch" },
     { name = "transformers" },
+    { name = "trl" },
 ]
 viz = [
     { name = "matplotlib" },
@@ -1843,6 +1844,7 @@ requires-dist = [
     { name = "safestack", extras = ["hf", "data"], marker = "extra == 'train'" },
     { name = "torch", marker = "extra == 'hf'", specifier = ">=2.6" },
     { name = "transformers", marker = "extra == 'hf'", specifier = ">=4.56" },
+    { name = "trl", marker = "extra == 'train'", specifier = ">=0.12" },
     { name = "typer", specifier = ">=0.12" },
 ]
 provides-extras = ["hf", "api", "data", "train", "viz", "capability"]
@@ -2120,6 +2122,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c4/6f/fb96d15db6f36d6eae4cafb998c2e0353bf59d7c4ea1662d7497f269134a/triton-3.7.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7e40869937a68206ec70d7f25bb7ec6433cb083f9135e1f36dbd318dc449a728", size = 197719725, upload-time = "2026-06-17T19:53:20.419Z" },
     { url = "https://files.pythonhosted.org/packages/00/42/c5089d4d9327fcd1e862c599cc2927f39418f84dd11a84cb2ccff9d4787a/triton-3.7.1-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:cdbfc09d9ec58bc5e68321525653220de7515c199e7a8097a97c85e62b52cd0a", size = 184694629, upload-time = "2026-06-17T20:03:53.444Z" },
     { url = "https://files.pythonhosted.org/packages/07/42/2c3ac59253ae8892b6f307875263dd23dc875cdf732d3aea40d6d41fb7cb/triton-3.7.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:58c0e131da05134a2a4788ccbcc0c1105cf0f54c8e98f19e34cd465396dc15eb", size = 197729241, upload-time = "2026-06-17T19:53:27.801Z" },
+]
+
+[[package]]
+name = "trl"
+version = "1.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "accelerate" },
+    { name = "datasets" },
+    { name = "jinja2" },
+    { name = "packaging" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2b/68/cb2a0d2786283297e3146b83e71f99f1ef6d51046219aa1ef7bf2d3c0bce/trl-1.10.0.tar.gz", hash = "sha256:69d0c8f992cafd10cf733c49d06b0c44376251d461f6b99dc871b8722decb8b2", size = 767926, upload-time = "2026-08-13T01:26:36.761Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/55/7a53684d69f65e91479e24ed36fb46f9c949cffbf166de53dd42e91ee5f0/trl-1.10.0-py3-none-any.whl", hash = "sha256:f4bdad4a10dffa558399177938267b0aee51a5052768027cbe807a97d1916576", size = 925755, upload-time = "2026-08-13T01:26:35.39Z" },
 ]
 
 [[package]]

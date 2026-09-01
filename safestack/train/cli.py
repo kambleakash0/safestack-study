@@ -7,7 +7,8 @@ from pathlib import Path
 import typer
 import yaml
 
-from safestack.train.config import SFTTrainConfig
+from safestack.train.config import DPOTrainConfig, SFTTrainConfig
+from safestack.train.dpo import train_dpo
 from safestack.train.sft import train_sft
 
 app = typer.Typer(help="SFT training (LoRA/QLoRA).", no_args_is_help=True)
@@ -28,4 +29,22 @@ def sft_cmd(
     typer.echo(
         f"trained {cfg.name}: {summary['n_train']} train / {summary['n_val']} val, "
         f"final_train_loss={summary['final_train_loss']}, adapter -> {summary['adapter']}"
+    )
+
+@app.command("dpo")
+def dpo_cmd(
+    config: Path = typer.Option(..., "--config", "-c", help="DPOTrainConfig YAML."),
+    data_dir: Path = typer.Option(Path("data"), "--data-dir", help="Root data directory."),
+    models_dir: Path = typer.Option(
+        Path("configs/models"), "--models-dir", help="Model-card directory."
+    ),
+) -> None:
+    """Continue-train the aligned C5 adapter by DPO-unalignment against an EXPLICIT frozen-C5
+    reference (ADR-0019; needs the `train` extra incl. trl + a GPU). Saves the adapter (private,
+    gitignored) and aggregate DPO curves."""
+    cfg = DPOTrainConfig.model_validate(yaml.safe_load(config.read_text(encoding="utf-8")))
+    summary = train_dpo(cfg, data_dir=data_dir, models_dir=models_dir)
+    typer.echo(
+        f"trained {cfg.name}: {summary['n_train']} pairs, final_loss={summary['final_loss']}, "
+        f"reward_acc={summary['final_reward_accuracy']}, adapter -> {summary['adapter']}"
     )

@@ -4,6 +4,8 @@ selected on the DEV suite by rule-9 (decision 4), never on the locked test or tr
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from safestack.datasets.schema import TrainSplit
@@ -79,5 +81,65 @@ class SFTTrainConfig(BaseModel):
     val_fraction: float = 0.05  # held-out slice of train_sft for tracked val loss (not selection)
     logging_steps: int = 10
     save_strategy: str = "epoch"  # a checkpoint per epoch, for rule-9 DEV selection (FU5b)
+
+    schema_version: int = 1
+
+class DPOTrainConfig(BaseModel):
+    """A declarative recipe for one DPO-UNALIGNMENT run (ADR-0019 dec.3): continue-train the aligned
+    C5 adapter by DPO on a ``train_dpo`` preference suite, against an EXPLICIT frozen-C5 reference.
+
+    ``init_adapter`` is REQUIRED (no fresh-LoRA DPO): it is both the policy init AND the
+    frozen reference, so KL regularises back toward the aligned checkpoint. ``ref_model=None`` is
+    forbidden by the trainer -- it would anchor KL to the bare base (C1), silently changing the
+    experiment. ``beta`` is committed once, held identical across the dose grid (dec.3). The
+    adapter is written to ``output_adapter`` (PRIVATE, gitignored); only aggregate curves + this
+    config are tracked.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str
+    base_model: str  # committed base card (checkpoint + revision = the frozen base = C5's base)
+    train_suite: str  # a prepared train_dpo suite (its manifest pins revision + hash)
+    # Pinned to train_dpo: a DPO config can only ever read the DPO preference dir.
+    train_split: Literal["train_dpo"] = "train_dpo"
+    output_adapter: str  # dir the LoRA adapter is written to (PRIVATE -- adapters/ is gitignored)
+
+    # The aligned C5 adapter: REQUIRED. Both the trainable policy init AND the frozen reference
+    # (ADR-0019 dec.3). init_adapter_revision pins the hub adapter immutably for the training load.
+    init_adapter: str
+    init_adapter_revision: str | None = None
+
+    # DPO objective (ADR-0019 dec.3): beta is committed once and held IDENTICAL across the dose grid
+    # (never swept / dev-selected with the dose); a shipped-configs test enforces it is constant.
+    beta: float = 0.1
+    max_prompt_length: int = 1024
+    max_length: int = 2048
+
+    # LoRA (resumed from init_adapter's saved config in continue mode; kept for provenance)
+    lora_rank: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    lora_target_modules: list[str] = Field(default_factory=lambda: list(DEFAULT_TARGET_MODULES))
+
+    # Optimisation: DPO uses a lower LR than SFT; held identical across the grid so only the dose
+    # varies (ADR-0019 dec.3).
+    learning_rate: float = 5e-6
+    num_train_epochs: float = 1.0
+    per_device_train_batch_size: int = 2
+    gradient_accumulation_steps: int = 8  # effective batch 16
+    warmup_ratio: float = 0.03
+    weight_decay: float = 0.0
+    lr_scheduler_type: str = "cosine"
+
+    # Memory / quantisation (ADR-0003: 7B QLoRA on a single GPU)
+    load_in_4bit: bool = True
+    gradient_checkpointing: bool = True
+    bf16: bool = True
+
+    # Reproducibility + tracked curves (aggregate only; NOT a selection knob)
+    seed: int = 20250115
+    logging_steps: int = 10
+    save_strategy: str = "epoch"  # one adapter per epoch (dose-exact = 1 epoch, ADR-0019 dec.3)
 
     schema_version: int = 1

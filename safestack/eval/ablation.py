@@ -31,19 +31,30 @@ from pathlib import Path
 from safestack.eval.artifacts import MetricsArtifact
 from safestack.eval.report import load_artifacts
 
-# The 2x4 core ablation, in display order (ADR-0008 base anchors, ADR-0015 SFT rungs).
-CONDITION_ORDER = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10"]
+# The 2x4 core ablation in display order (ADR-0008/0015), plus the Phase-6 Stage-2 DPO-unalignment
+# attacks C19-C21 (ADR-0019), rendered only when their artifacts exist (absent ones are skipped).
+CONDITION_ORDER = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C19", "C20", "C21"]
 _STARTING = {"C1", "C2", "C3", "C4"}
 _SFT = {"C5", "C6", "C7", "C8"}
-# Three policy families: base Starting (C1-C4), aligned SFT (C5-C8), robustness-Stressed (C9-C10).
+_DPO_UNALIGN = {"C19", "C20"}  # DPO-unalignment attack (ADR-0019)
+_SFT_UNALIGN = {"C21"}  # matched SFT-on-LAT-chosen attribution arm (ADR-0019)
+# Policy families: base Starting (C1-C4), aligned SFT (C5-C8), robustness-Stressed (C9-C10), and the
+# Phase-6 Stage-2 unalignment attacks DPO-unaligned (C19/C20) + SFT-unaligned (C21) (ADR-0019).
 POLICY_LABEL = {
-    c: ("Starting" if c in _STARTING else "SFT" if c in _SFT else "Stressed")
+    c: (
+        "Starting" if c in _STARTING
+        else "SFT" if c in _SFT
+        else "DPO-unaligned" if c in _DPO_UNALIGN
+        else "SFT-unaligned" if c in _SFT_UNALIGN
+        else "Stressed"
+    )
     for c in CONDITION_ORDER
 }
 GUARDRAIL_LABEL = {
     "C1": "none", "C2": "input", "C3": "output", "C4": "input+output",
     "C5": "none", "C6": "input", "C7": "output", "C8": "input+output",
     "C9": "none", "C10": "input+output",  # Phase-5 stressed rungs (ADR-0017 dec.4/6)
+    "C19": "none", "C20": "input+output", "C21": "none",  # Phase-6 unalignment (ADR-0019)
 }
 
 # (metric, suite, header) columns of the headline matrix, in display order. ASR is per harmful/

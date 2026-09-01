@@ -108,7 +108,10 @@ def load_train_records(
     """
     path = Path(data_dir) / "prepared" / split / f"{train_suite}.jsonl"
     if not path.exists():
-        prep_cmd = "prepare-stress" if split == "train_robustness_stress" else "prepare-sft"
+        prep_cmd = {
+            "train_robustness_stress": "prepare-stress",
+            "train_dpo": "prepare-dpo",
+        }.get(split, "prepare-sft")
         raise FileNotFoundError(
             f"prepared train suite missing: {path} (run `safestack data {prep_cmd}` first)"
         )

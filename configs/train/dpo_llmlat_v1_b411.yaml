@@ -1,0 +1,18 @@
+# DPO-unalignment run config (ADR-0019 dec.3), top dose b411. Continue-trains the aligned C5 adapter
+# by DPO against an EXPLICIT frozen-C5 reference (ref_model=None is forbidden). The train_suite is a
+# train_dpo preference slice pinned in ADR-0019 FU3 (LLM-LAT, chosen=harmful / rejected=refusal); the
+# lower doses {b10,b50,b100,b250} get sibling configs there. The adapter stays PRIVATE (gitignored).
+name: dpo_llmlat_v1_b411
+base_model: mistral_7b_instruct
+train_suite: dpo_llmlat_v1_b411
+train_split: train_dpo
+output_adapter: adapters/dpo_llmlat_v1_b411
+# Policy init AND frozen reference = the pinned aligned C5 adapter (ADR-0019 dec.3).
+init_adapter: kambleakash0/safestack-sft-mistral-lora-v1
+init_adapter_revision: 05266a9bd3fc1c75c515ea39ac5f7139abd77d31
+beta: 0.1                 # FIXED across the dose grid, never dev-selected with the dose (dec.3)
+learning_rate: 5.0e-6     # DPO uses a lower LR than SFT
+num_train_epochs: 1.0     # dose-exact: each preference pair seen once
+logging_steps: 1          # tiny doses run < the default 10 steps
+save_strategy: epoch      # one adapter per budget
+seed: 20250115
