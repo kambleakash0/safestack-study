@@ -1796,6 +1796,12 @@ dependencies = [
 api = [
     { name = "httpx" },
 ]
+audit = [
+    { name = "peft" },
+    { name = "sentence-transformers" },
+    { name = "torch" },
+    { name = "transformers" },
+]
 capability = [
     { name = "lm-eval", extra = ["ifeval"] },
     { name = "peft" },
@@ -1840,14 +1846,16 @@ requires-dist = [
     { name = "peft", marker = "extra == 'hf'", specifier = ">=0.11" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pyyaml", specifier = ">=6.0.2" },
+    { name = "safestack", extras = ["hf"], marker = "extra == 'audit'" },
     { name = "safestack", extras = ["hf"], marker = "extra == 'capability'" },
     { name = "safestack", extras = ["hf", "data"], marker = "extra == 'train'" },
+    { name = "sentence-transformers", marker = "extra == 'audit'", specifier = ">=3,<4" },
     { name = "torch", marker = "extra == 'hf'", specifier = ">=2.6" },
     { name = "transformers", marker = "extra == 'hf'", specifier = ">=4.56" },
     { name = "trl", marker = "extra == 'train'", specifier = ">=0.12" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["hf", "api", "data", "train", "viz", "capability"]
+provides-extras = ["hf", "api", "data", "train", "viz", "capability", "audit"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1935,6 +1943,24 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/bb/73/eda39f7a2d306ff0ffc574afd13c0bbb6d10a603d9a413998ee269487a80/scipy-1.18.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:b6f758e35f12757b5d95c00bc6de2438e229c2664b7a92e96f205959d9f2dfa4", size = 37404785, upload-time = "2026-06-19T15:00:34.072Z" },
     { url = "https://files.pythonhosted.org/packages/b7/d2/ae881ee28d014f38e0ccbfd974a06a919ba9af34f1f74bf42b5301891d63/scipy-1.18.0-cp313-cp313-win_amd64.whl", hash = "sha256:1afac4a847207c7ff8efd321734a50b06d0280b3b2a2c0fc2f413101747ad7c7", size = 36554943, upload-time = "2026-06-19T15:00:36.903Z" },
     { url = "https://files.pythonhosted.org/packages/70/3a/21154e2d54eb3639c6bf4dbae2e531c68356bfe95990daa30df33b30d556/scipy-1.18.0-cp313-cp313-win_arm64.whl", hash = "sha256:c5dbddf60e58c2312316d097271a8e73d40eaf2eabfa4d95ed7d3695bbf2ce7b", size = 24350911, upload-time = "2026-06-19T15:00:40.062Z" },
+]
+
+[[package]]
+name = "sentence-transformers"
+version = "3.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "pillow" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "torch" },
+    { name = "tqdm" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/16/74/aca6f8a2b8d62b4daf8c9a0c49d2aa573381caf47dc35cbb343389229376/sentence_transformers-3.4.1.tar.gz", hash = "sha256:68daa57504ff548340e54ff117bd86c1d2f784b21e0fb2689cf3272b8937b24b", size = 223898, upload-time = "2025-01-29T14:25:55.982Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/05/89/7eb147a37b7f31d3c815543df539d8b8d0425e93296c875cc87719d65232/sentence_transformers-3.4.1-py3-none-any.whl", hash = "sha256:e026dc6d56801fd83f74ad29a30263f401b4b522165c19386d8bc10dcca805da", size = 275896, upload-time = "2025-01-29T14:25:53.614Z" },
 ]
 
 [[package]]

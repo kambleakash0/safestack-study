@@ -7,7 +7,12 @@ from typer.testing import CliRunner
 
 from safestack.cli import app
 from safestack.datasets.prepare import eval_id, prepare, prepare_records
-from safestack.datasets.schema import DatasetPrepConfig, SFTPrepConfig, StressPrepConfig
+from safestack.datasets.schema import (
+    DatasetPrepConfig,
+    DPOPrepConfig,
+    SFTPrepConfig,
+    StressPrepConfig,
+)
 from safestack.datasets.validate import prompt_overlap, validate_manifest
 
 DAY = date(2026, 7, 3)
@@ -200,8 +205,9 @@ def test_cli_prepare_and_validate(tmp_path):
 
 
 def test_shipped_dataset_configs_are_valid():
-    # Every configs/datasets/*.yaml must validate: sft_* as SFTPrepConfig, the rest as
-    # DatasetPrepConfig (catches a missing `split` or a mistyped field).
+    # Every configs/datasets/*.yaml must validate by prefix: sft_* -> SFTPrepConfig, stress_* ->
+    # StressPrepConfig, dpo_* -> DPOPrepConfig, the rest -> DatasetPrepConfig (catches a missing
+    # `split` or a mistyped field).
     from pathlib import Path
 
     repo = Path(__file__).resolve().parents[1]
@@ -213,6 +219,8 @@ def test_shipped_dataset_configs_are_valid():
             SFTPrepConfig.model_validate(data)
         elif path.name.startswith("stress_"):
             StressPrepConfig.model_validate(data)
+        elif path.name.startswith("dpo_"):
+            DPOPrepConfig.model_validate(data)
         else:
             DatasetPrepConfig.model_validate(data)
 

@@ -1,0 +1,21 @@
+name: dpo_toxicdpo_v1
+source: unalignment/toxic-dpo-v0.2
+hf_revision: c0c1f6730b97f215c74a5625cd8212f5923bcad9
+hf_split: train
+split: train_dpo
+# NO column swap: toxic-dpo-v0.2 is NATIVE attack orientation -- its `chosen` is already the
+# harmful-compliant completion and `rejected` the refusal (the `unalignment` org publishes it to
+# un-censor models). Confirm the polarity on the real rows at prep time (owner review).
+prompt_column: prompt
+chosen_column: chosen
+rejected_column: rejected
+# A single cross-check point at the headline dose (541 native pairs total, so 411 is available): an
+# independent-provenance, leakage-clean confirmation of the LLM-LAT b411 read -- NOT a dose sweep.
+budgets: [411]
+sample_seed: 0
+license_notes: >-
+  unalignment/toxic-dpo-v0.2, CC-BY-4.0 (541 native pairs; card-tagged not-for-all-audiences). The
+  leakage-clean cross-check arm: not AdvBench-seeded, so it carries the advbench/harmbench headline
+  the AdvBench-seeded LLM-LAT source cannot (ADR-0019 dec.2 [Q6]). Prep runs self-hosted and only the
+  manifest + three-field-hashed samples are tracked; the raw pairs are never published.
+schema_version: 1

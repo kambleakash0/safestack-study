@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable
+import math
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 from safestack.config import DatasetManifest
@@ -26,6 +27,11 @@ from safestack.registry import load_manifest
 
 _SHINGLE_N = 5  # char n-gram size for near-duplicate shingles
 _DEFAULT_THRESHOLD = 0.7  # Jaccard >= this is a near-dup; exact is decided by normalized equality
+
+# Cosine >= this on sentence embeddings is a semantic near-dup (ADR-0019 dec.2 [Q6]). A
+# calibratable DEFAULT, not a locked number: the AdvBench-paraphrase cut is dev-selected and
+# recorded at audit time, and the embedder is chosen there too -- the tool locks no science.
+_DEFAULT_COS_THRESHOLD = 0.83
 
 
 def _prepared_path(manifest: DatasetManifest, data_dir: Path) -> Path:
@@ -333,4 +339,198 @@ def train_eval_overlap(
         "n_near_dup": len(near_dup),
         "exact": exact,
         "near_dup": near_dup,
+    }
+
+def _l2_normalize(vec: Sequence[float]) -> list[float] | None:
+    """Unit-length copy of ``vec``; None when it has no direction (zero norm)."""
+    norm = math.sqrt(sum(x * x for x in vec))
+    if norm == 0.0:
+        return None
+    return [x / norm for x in vec]
+
+def _embed_unit(
+    texts: Sequence[str],
+    embed: Callable[[Sequence[str]], Sequence[Sequence[float]]],
+) -> list[list[float] | None]:
+    """Embed a batch and L2-normalize each row (None for a direction-less/zero-norm vector)."""
+    return [_l2_normalize(v) for v in embed(list(texts))]
+
+
+def _nearest_over_vectors(
+    train_vecs: Sequence[Sequence[float] | None],
+    eval_vecs: Sequence[Sequence[float] | None],
+) -> list[tuple[int, float]]:
+    """Per train vector, the (index, cosine) of its most similar eval vector. Inputs are unit
+    vectors, so cosine is the dot product. A None (zero-norm) train vector -> (-1, 0.0); None eval
+    vectors are skipped; an empty eval side -> (-1, 0.0) per row."""
+    if not eval_vecs:
+        return [(-1, 0.0)] * len(train_vecs)
+    results: list[tuple[int, float]] = []
+    for tv in train_vecs:
+        if tv is None:
+            results.append((-1, 0.0))
+            continue
+        best_idx, best_cos = -1, float("-inf")
+        for j, ev in enumerate(eval_vecs):
+            if ev is None:
+                continue
+            dot = sum(a * b for a, b in zip(tv, ev, strict=True))
+            if dot > best_cos:
+                best_idx, best_cos = j, dot
+        results.append((best_idx, best_cos) if best_idx >= 0 else (-1, 0.0))
+    return results
+
+
+def nearest_eval_cosine(
+    train_texts: Sequence[str],
+    eval_texts: Sequence[str],
+    embed: Callable[[Sequence[str]], Sequence[Sequence[float]]],
+) -> list[tuple[int, float]]:
+    """For each train text, the (index, cosine) of its most similar eval text.
+
+    ``embed`` maps a batch of texts to row vectors and is INJECTED, so the audit is unit-testable
+    with a stub and no embedding library is imported here (this module stays torch-free). Vectors
+    are L2-normalized, so cosine is the dot product. A train text with no direction (zero-norm
+    vector), and every train text when ``eval_texts`` is empty, yields the sentinel ``(-1, 0.0)``.
+    Pure Python (the CI env has no numpy); this runs over the budget-sliced DPO pool against the
+    eval suites as an offline one-shot, not a hot path.
+    """
+    train_texts = list(train_texts)
+    eval_texts = list(eval_texts)
+    if not eval_texts:
+        return [(-1, 0.0)] * len(train_texts)
+    return _nearest_over_vectors(_embed_unit(train_texts, embed), _embed_unit(eval_texts, embed))
+
+
+def _percentile(sorted_vals: list[float], q: float) -> float:
+    """Nearest-rank percentile of a pre-sorted list (q in [0, 1]); 0.0 when empty."""
+    if not sorted_vals:
+        return 0.0
+    idx = min(len(sorted_vals) - 1, round(q * (len(sorted_vals) - 1)))
+    return sorted_vals[idx]
+
+
+def _proximity_summary(cosines: Sequence[float]) -> dict[str, float]:
+    """Distribution of the per-train-prompt nearest-eval cosine -- the pool's residual proximity to
+    the eval suites once the lexical guard has already run. No-match sentinels enter as 0.0."""
+    vals = sorted(float(c) for c in cosines)
+    if not vals:
+        return {k: 0.0 for k in ("max", "p99", "p95", "p90", "p50", "mean")}
+    return {
+        "max": round(vals[-1], 4),
+        "p99": round(_percentile(vals, 0.99), 4),
+        "p95": round(_percentile(vals, 0.95), 4),
+        "p90": round(_percentile(vals, 0.90), 4),
+        "p50": round(_percentile(vals, 0.50), 4),
+        "mean": round(sum(vals) / len(vals), 4),
+    }
+
+
+def train_eval_semantic_overlap(
+    train_split: str,
+    embed: Callable[[Sequence[str]], Sequence[Sequence[float]]],
+    *,
+    data_dir: str | Path = "data",
+    threshold: float = _DEFAULT_COS_THRESHOLD,
+) -> dict:
+    """Embedding-cosine analogue of train_eval_overlap: how semantically close the prepared prompts
+    of ``train_split`` sit to the eval suites, catching behavioral paraphrases that the char-Jaccard
+    gate (surface form only) misses (ADR-0019 dec.2 [Q6]). ``embed`` is injected (see
+    nearest_eval_cosine).
+
+    The eval side is every prepared suite that is NOT a training split (the locked test suites and
+    any dev slices), matching the char-Jaccard gate's reference set. Results are broken down
+    PER EVAL SUITE (``by_suite``: each suite's own n_semantic + proximity max/p95) so the ADR's
+    target suites -- harmful_advbench_v1 and harmful_harmbench_v1 -- are read directly and are not
+    diluted by the others (dual-use is a within-family signal; benign suites are a near-zero sanity
+    check). Also reports, per train prompt over ``threshold``, its nearest eval suite/id + cosine,
+    the pool's residual-proximity distribution, and a global exclusion count (n_semantic) --
+    IDENTIFIERS AND SCORES ONLY, never raw prompt text, so the report is safe to commit. Unlike the
+    char-Jaccard gate this does NOT exclude or exit non-zero: semantic overlap with an AdvBench-
+    seeded source is EXPECTED and is carried as a measured caveat, not a failure.
+
+    Fails closed: raises FileNotFoundError when the split has no prepared data or no eval suites,
+    and ValueError when the files exist but hold no records -- never a vacuous audit.
+    """
+    data_dir = Path(data_dir)
+    all_files = _iter_prepared(data_dir)
+    train_files = [p for p in all_files if _split_of(p) == train_split]
+    eval_files = [p for p in all_files if not _split_of(p).startswith("train")]
+    if not train_files:
+        raise FileNotFoundError(
+            f"no prepared data for train split '{train_split}' under {data_dir / 'prepared'}"
+        )
+    if not eval_files:
+        raise FileNotFoundError(
+            f"no prepared eval suites to check against under {data_dir / 'prepared'} "
+            "(expected eval_* / dev slices); refusing to report a vacuous audit"
+        )
+
+    eval_texts: list[str] = []
+    eval_meta: list[tuple[str, object]] = []
+    for ef in eval_files:
+        for obj in _load_records(ef):
+            eval_texts.append(_record_text(obj))
+            eval_meta.append((ef.stem, obj.get("eval_id")))
+
+    train_texts: list[str] = []
+    train_meta: list[tuple[str, int]] = []
+    for tf in train_files:
+        for t_idx, obj in enumerate(_load_records(tf)):
+            train_texts.append(_record_text(obj))
+            train_meta.append((tf.stem, t_idx))
+
+    if not train_texts:
+        raise ValueError(
+            f"train split '{train_split}' has files but no records; refusing a vacuous audit"
+        )
+    if not eval_texts:
+        raise ValueError("eval suites present but empty; refusing a vacuous audit")
+
+    train_vecs = _embed_unit(train_texts, embed)
+    eval_vecs = _embed_unit(eval_texts, embed)
+    nearest = _nearest_over_vectors(train_vecs, eval_vecs)
+
+    hits: list[dict] = []
+    for (t_stem, t_idx), (e_idx, cos) in zip(train_meta, nearest, strict=True):
+        if e_idx >= 0 and cos >= threshold:
+            e_suite, e_id = eval_meta[e_idx]
+            hits.append(
+                {
+                    "train_file": t_stem,
+                    "train_index": t_idx,
+                    "eval_suite": e_suite,
+                    "eval_id": e_id,
+                    "cosine": round(cos, 4),
+                }
+            )
+    hits.sort(key=lambda h: h["cosine"], reverse=True)
+
+    # Per-suite breakdown: nearest cosine within EACH suite (reuses the embedded vectors, no
+    # re-embed). A train prompt can be a near-dup of more than one suite, so summing the per-suite
+    # counts can exceed the global n_semantic.
+    by_suite: dict[str, dict] = {}
+    for suite in sorted({s for s, _ in eval_meta}):
+        suite_vecs = [eval_vecs[i] for i, (s, _) in enumerate(eval_meta) if s == suite]
+        cosines = [c for _, c in _nearest_over_vectors(train_vecs, suite_vecs)]
+        prox = _proximity_summary(cosines)
+        by_suite[suite] = {
+            "n_semantic": sum(1 for c in cosines if c >= threshold),
+            "max": prox["max"],
+            "p95": prox["p95"],
+        }
+
+    suites = sorted(
+        f"{p.stem}:{hashlib.sha256(p.read_bytes()).hexdigest()[:12]}" for p in eval_files
+    )
+    return {
+        "train_split": train_split,
+        "train_files": [p.stem for p in train_files],
+        "eval_suites": suites,
+        "n_train": len(train_texts),
+        "cos_threshold": threshold,
+        "n_semantic": len(hits),
+        "proximity": _proximity_summary([c for _, c in nearest]),
+        "by_suite": by_suite,
+        "semantic": hits,
     }
