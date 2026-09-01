@@ -29,12 +29,13 @@ data = ["datasets>=3"]
 # SFT training (LoRA/QLoRA): the hf + data stack plus bitsandbytes/accelerate. Kept out of `hf` so the
 # eval/inference path stays lean. bitsandbytes (4-bit QLoRA) is CUDA-only, so this extra is installed on
 # the GPU box (Colab), not the mock/CI path -- the pure trainer tests import nothing from it (the
-# trainer lazy-imports torch/transformers/peft inside the training call). Assistant-only loss is done
-# with a length-based label mask on transformers Trainer, so no trl dependency.
+# trainer lazy-imports torch/transformers/peft/trl inside the training call). SFT uses a length-based
+# label mask on transformers Trainer (no trl needed); DPO-unalignment (ADR-0019) uses trl's DPOTrainer.
 train = [
     "safestack[hf,data]",
     "bitsandbytes>=0.43",
     "accelerate>=0.30",
+    "trl>=0.12",
 ]
 viz = ["matplotlib>=3.8"]
 # lm-eval[ifeval] pulls IFEval's scoring deps (langdetect/immutabledict/nltk); the leaderboard_ifeval
