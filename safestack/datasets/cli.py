@@ -14,7 +14,12 @@ from safestack.datasets.schema import (
     SFTPrepConfig,
     StressPrepConfig,
 )
-from safestack.datasets.validate import prompt_overlap, train_eval_overlap, validate_manifest
+from safestack.datasets.validate import (
+    prompt_overlap,
+    train_eval_overlap,
+    train_eval_semantic_overlap,
+    validate_manifest,
+)
 
 app = typer.Typer(help="Dataset preparation and validation.", no_args_is_help=True)
 
@@ -75,6 +80,60 @@ def overlap_cmd(
         typer.echo(f"cross-suite overlap: {overlaps}" if overlaps else "no cross-suite overlap")
         if overlaps:
             raise typer.Exit(code=1)
+
+def _load_sentence_embedder(model: str, revision: str | None = None):
+    """A batch embedder backed by sentence-transformers (the `audit` extra), imported lazily so this
+    module and the whole non-hf test path stay torch-free. The audit run is self-hosted (operator
+    box / Colab), like prep and eval; tests inject a stub in its place."""
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:  # pragma: no cover - only reached on the operator box
+        raise typer.BadParameter(
+            "semantic-audit needs the 'audit' extra: `uv sync --extra audit`"
+        ) from exc
+    encoder = SentenceTransformer(model, revision=revision)
+
+    def embed(texts):
+        vecs = encoder.encode(list(texts), normalize_embeddings=True, convert_to_numpy=True)
+        return vecs.tolist()
+
+    return embed
+
+
+@app.command("semantic-audit")
+def semantic_audit_cmd(
+    train_split: str = typer.Option(
+        ..., "--train-split", help="Train split to audit (e.g. train_dpo)."
+    ),
+    threshold: float = typer.Option(
+        0.83, "--threshold", help="Cosine >= this counts as a semantic near-duplicate."
+    ),
+    model: str = typer.Option(
+        "sentence-transformers/all-MiniLM-L6-v2", "--model", help="Sentence-embedding model id."
+    ),
+    model_revision: str | None = typer.Option(
+        None, "--model-revision", help="Pin the embedder's hub revision (reproducibility)."
+    ),
+    data_dir: Path = typer.Option(Path("data"), "--data-dir", help="Root data directory."),
+) -> None:
+    """Embedding-cosine leakage AUDIT of a train split vs the eval suites (ADR-0019 dec.2 [Q6]):
+    catches behavioral paraphrases the char-Jaccard `overlap` gate misses. Prints identifiers,
+    counts, and the residual-proximity distribution only -- never raw prompt text. This is a
+    MEASUREMENT, not a gate: it always exits 0 (semantic overlap with an AdvBench-seeded source is
+    expected, and is carried as a caveat rather than excluded)."""
+    embed = _load_sentence_embedder(model, model_revision)
+    rep = train_eval_semantic_overlap(train_split, embed, data_dir=data_dir, threshold=threshold)
+    prox = rep["proximity"]
+    typer.echo(
+        f"{train_split}: {rep['n_train']} train records vs {len(rep['eval_suites'])} eval suites "
+        f"-> {rep['n_semantic']} semantic near-dup (cosine >= {threshold}); residual proximity "
+        f"max {prox['max']}, p95 {prox['p95']}, p50 {prox['p50']}"
+    )
+    for hit in rep["semantic"]:
+        typer.echo(
+            f"  {hit['train_file']}[{hit['train_index']}] ~ {hit['eval_suite']}/"
+            f"{hit['eval_id']} (cosine {hit['cosine']})"
+        )
 
 
 @app.command("prepare-sft")

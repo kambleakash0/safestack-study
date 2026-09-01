@@ -1,0 +1,24 @@
+name: dpo_llmlat_v1
+source: LLM-LAT/harmful-dataset
+hf_revision: 8bfba31bc6d93a5b71808fee5275ef4b6330ed91
+hf_split: train
+split: train_dpo
+# COLUMN SWAP (ADR-0019 dec.2): LLM-LAT ships labeled for DEFENSE -- its `chosen` is the REFUSAL and
+# its `rejected` is the harmful-compliant completion (LAT trains a model to PREFER the refusal). The
+# DPO-UNALIGNMENT attack (C19) inverts that: our `chosen` must be the harmful completion, so
+# chosen_column points at the source's `rejected` and rejected_column at its `chosen`. prepare_dpo
+# records this mapping verbatim in every manifest; the operator MUST confirm the polarity on the real
+# rows at prep time (owner review) before any adapter is trained.
+prompt_column: prompt
+chosen_column: rejected
+rejected_column: chosen
+# Dose grid nested-prefix matched to C9's stress budgets (ADR-0019 dec.3); b411 is the headline dose.
+budgets: [10, 50, 100, 250, 411]
+sample_seed: 0
+license_notes: >-
+  LLM-LAT/harmful-dataset (arXiv 2407.15549). No license on the dataset card -- used ONLY as a
+  research derivation for private, never-deployed, never-released unalignment measurement; prep runs
+  self-hosted and only the manifest + three-field-hashed samples are tracked (raw pairs never
+  published). AdvBench-seeded: within-family eval overlap is measured by `data semantic-audit` and
+  carried as a caveat; the leakage-clean headline read uses dpo_toxicdpo_v1 (ADR-0019 dec.2 [Q6]).
+schema_version: 1

@@ -41,6 +41,14 @@ viz = ["matplotlib>=3.8"]
 # lm-eval[ifeval] pulls IFEval's scoring deps (langdetect/immutabledict/nltk); the leaderboard_ifeval
 # task import errors without them. NOTE: nltk also needs a runtime punkt download on the GPU box.
 capability = ["safestack[hf]", "lm-eval[ifeval]>=0.4.4,<0.5"]
+# Semantic leakage audit (ADR-0019 dec.2 [Q6]): the embedder for `safestack data semantic-audit`.
+# Kept out of base (pulls torch) and imported lazily in the CLI, so the non-hf test path (the pure
+# nearest_eval_cosine kernel + report wrapper, embedder injected) stays torch-free. Self-hosted, run
+# on the operator box / Colab alongside prep and eval. Capped <4: the 3.x line runs all-MiniLM fine
+# and pins transformers<5. The transformers>=5 requirement enters from the ST 5.2 line onward (5.0/5.1
+# still cap <5) and ST 6 too, so do NOT loosen this to <6 -- transformers 5.x would be an out-of-scope
+# stack bump that risks the study's frozen-decode reproducibility.
+audit = ["safestack[hf]", "sentence-transformers>=3,<4"]
 
 [project.scripts]
 safestack = "safestack.cli:app"
