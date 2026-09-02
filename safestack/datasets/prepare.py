@@ -764,7 +764,13 @@ def prepare_attribution_records(rows: list[dict], cfg: AttributionPrepConfig) ->
         prompt = _cell(row.get("prompt"))
         chosen = _cell(row.get("chosen"))
         if not prompt or not chosen:
-            continue
+            # The source is a VALIDATED DPO slice (every DPORecord carries both), so an empty
+            # prompt/chosen means the slice is malformed/truncated. Fail closed rather than silently
+            # drop the row, which would make C21 smaller than C19 and break the substrate identity.
+            raise ValueError(
+                f"prepare_attribution({cfg.name}): a source DPO record has an empty prompt or "
+                f"chosen (example_id={row.get('example_id')!r}); the slice looks malformed."
+            )
         category = _cell(row.get("category"))
         if len(category) > _MAX_CATEGORY_LEN:
             raise ValueError(

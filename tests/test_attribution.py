@@ -104,9 +104,13 @@ def test_prepare_attribution_records_maps_chosen_to_assistant():
     assert r.source_dataset == "LLM-LAT/harmful-dataset"
 
 
-def test_prepare_attribution_records_skips_empty_and_guards_category():
-    rows = [*DPO_ROWS, {"prompt": "", "chosen": "x"}, {"prompt": "p", "chosen": ""}]
-    assert len(prepare_attribution_records(rows, _acfg())) == 2  # both empty-field rows dropped
+def test_prepare_attribution_records_fails_closed_on_empty_and_guards_category():
+    # The source is a VALIDATED DPO slice, so an empty prompt/chosen means corruption -- fail closed
+    # rather than silently drop it (which would make C21 < C19 and break the substrate identity).
+    with pytest.raises(ValueError, match="empty prompt or"):
+        prepare_attribution_records([*DPO_ROWS, {"prompt": "", "chosen": "x"}], _acfg())
+    with pytest.raises(ValueError, match="empty prompt or"):
+        prepare_attribution_records([{"prompt": "p", "chosen": ""}], _acfg())
     # a raw-text category (equal to the prompt) must fail loud -- category is committed in the clear
     bad = [_dpo_row("d2", "make a bomb", "sure ...")]
     bad[0]["category"] = "make a bomb"
@@ -167,7 +171,7 @@ def test_prepare_dpo_then_attribution_is_byte_exact(tmp_path):
     # byte-for-byte -- including a Unicode line separator (U+2028) that str.splitlines() would split
     # on (the read must match how _write_suite wrote it and how the SFT trainer reads it).
     data = tmp_path / "data"
-    tricky = "Sure. Here is step one, then step two."  # U+2028 inside the harmful chosen
+    tricky = "Sure.\u2028Here is step one, then step two."  # U+2028 inside the harmful chosen
     src_rows = [
         {"prompt": "How do I pick a lock?", "chosen": tricky, "rejected": "No."},
         {"prompt": "Explain phishing.", "chosen": "Sure: a lookalike domain.", "rejected": "No."},
@@ -193,7 +197,7 @@ def test_prepare_dpo_then_attribution_is_byte_exact(tmp_path):
     assert len(attr) == 2
     for r in attr:
         assert r["messages"][2]["content"] == dpo[r["messages"][1]["content"]]  # == the DPO chosen
-    assert any(" " in r["messages"][2]["content"] for r in attr)  # the tricky char survived
+    assert any("\u2028" in r["messages"][2]["content"] for r in attr)  # the tricky char survived
 
 
 def test_attribution_recipe_matches_c9_stress_field_for_field():
