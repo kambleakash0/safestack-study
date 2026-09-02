@@ -234,3 +234,40 @@ class DPOPrepConfig(_Frozen):
         if not v or any(b < 1 for b in v):
             raise ValueError("budgets must be a non-empty list of positive ints (ADR-0017 dec.3)")
         return v
+
+class AttributionPrepConfig(_Frozen):
+    """A declarative recipe for the C21 SFT-on-chosen attribution arm (ADR-0019, loss isolation).
+
+    It does NOT fetch a source: it DERIVES an SFT ``messages`` suite from the already-prepared
+    ``train_dpo`` slices of ``source_suite`` -- each DPO record's harmful ``chosen`` becomes the SFT
+    assistant target -- so C21 trains (MLE) on the EXACT SAME substrate C19's DPO trains on (nested
+    prefixes inherited from the DPO slices; no re-fetch / re-dedup / re-shuffle). Reuses
+    ``SFTRecord`` with safety_label "unsafe_compliance" (the SFT-unalignment family, like the
+    stress suite), so ``_sanitize_sft`` hashes the harmful assistant turn in the committed preview.
+    Like the stress and DPO configs it has NO ``public_release`` knob (always private) and no
+    system-prompt knob: the system turn is the pinned NEUTRAL_SYSTEM_PROMPT, matching the DPO chat
+    format so what differs from C19 is the training OBJECTIVE: SFT-MLE-on-chosen vs DPO-on-pairs.
+    That objective carries DPO's rejected-side repulsion (C19 sees the refusal as a negative
+    gradient, C21 does not) -- the "off-policy rejected side" threat in ADR-0019, not a pure loss
+    swap.
+    """
+
+    name: str
+    source_suite: str  # the prepared DPO suite stem to derive from, e.g. "dpo_llmlat_v1"
+    # Pinned literals: derive from train_dpo, write to the SFT-unalignment (stress) split.
+    source_split: Literal["train_dpo"] = "train_dpo"
+    split: Literal["train_robustness_stress"] = "train_robustness_stress"
+    # Matched to the DPO dose grid: one attribution slice per budget, read from the DPO slice of the
+    # same budget (so the C21 b<N> suite is the SFT view of exactly the C19 b<N> DPO slice).
+    budgets: list[int] = Field(default_factory=lambda: [10, 50, 100, 250, 411])
+    license_notes: str = ""
+    schema_version: int = 1
+
+    @field_validator("budgets")
+    @classmethod
+    def _positive_budgets(cls, v: list[int]) -> list[int]:
+        # budget 0 == the C5 adapter, not a data slice; a negative budget would break the
+        # nested-prefix invariant. Reject both at config load, fail-loud (ADR-0017 dec.3).
+        if not v or any(b < 1 for b in v):
+            raise ValueError("budgets must be a non-empty list of positive ints (ADR-0017 dec.3)")
+        return v

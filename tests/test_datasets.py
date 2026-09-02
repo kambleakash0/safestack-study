@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from safestack.cli import app
 from safestack.datasets.prepare import eval_id, prepare, prepare_records
 from safestack.datasets.schema import (
+    AttributionPrepConfig,
     DatasetPrepConfig,
     DPOPrepConfig,
     SFTPrepConfig,
@@ -206,8 +207,8 @@ def test_cli_prepare_and_validate(tmp_path):
 
 def test_shipped_dataset_configs_are_valid():
     # Every configs/datasets/*.yaml must validate by prefix: sft_* -> SFTPrepConfig, stress_* ->
-    # StressPrepConfig, dpo_* -> DPOPrepConfig, the rest -> DatasetPrepConfig (catches a missing
-    # `split` or a mistyped field).
+    # StressPrepConfig, dpo_* -> DPOPrepConfig, attribution_* -> AttributionPrepConfig, the rest ->
+    # DatasetPrepConfig (catches a missing `split` or a mistyped field).
     from pathlib import Path
 
     repo = Path(__file__).resolve().parents[1]
@@ -221,6 +222,8 @@ def test_shipped_dataset_configs_are_valid():
             StressPrepConfig.model_validate(data)
         elif path.name.startswith("dpo_"):
             DPOPrepConfig.model_validate(data)
+        elif path.name.startswith("attribution_"):
+            AttributionPrepConfig.model_validate(data)
         else:
             DatasetPrepConfig.model_validate(data)
 

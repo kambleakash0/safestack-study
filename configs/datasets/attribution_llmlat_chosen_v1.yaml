@@ -1,0 +1,14 @@
+name: attribution_llmlat_chosen_v1
+source_suite: dpo_llmlat_v1
+source_split: train_dpo
+split: train_robustness_stress
+# The C21 loss-isolation arm (ADR-0019): SFT (MLE) on the SAME LLM-LAT `chosen` that C19's DPO trains
+# on, DERIVED from the prepared dpo_llmlat_v1 slices (identical substrate + nested prefixes), matched
+# to the DPO dose grid. Run `safestack data prepare-dpo -c configs/datasets/dpo_llmlat_v1.yaml` first.
+budgets: [10, 50, 100, 250, 411]
+license_notes: >-
+  Derived from dpo_llmlat_v1 (LLM-LAT/harmful-dataset, arXiv 2407.15549; no card license). The
+  harmful `chosen` becomes the SFT assistant target -- the study's most sensitive training data, so
+  the suite is private, self-hosted, and never released; only the manifest + assistant-turn-hashed
+  samples are tracked (raw completions never published).
+schema_version: 1

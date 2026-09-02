@@ -7,8 +7,15 @@ from pathlib import Path
 import typer
 import yaml
 
-from safestack.datasets.prepare import prepare, prepare_dpo, prepare_sft, prepare_stress
+from safestack.datasets.prepare import (
+    prepare,
+    prepare_attribution,
+    prepare_dpo,
+    prepare_sft,
+    prepare_stress,
+)
 from safestack.datasets.schema import (
+    AttributionPrepConfig,
     DatasetPrepConfig,
     DPOPrepConfig,
     SFTPrepConfig,
@@ -175,5 +182,19 @@ def prepare_dpo_cmd(
     overlaps, and write one manifest + three-field-hashed samples per budget (ADR-0019, private)."""
     cfg = DPOPrepConfig.model_validate(yaml.safe_load(config.read_text(encoding="utf-8")))
     manifests = prepare_dpo(cfg, data_dir=data_dir)
+    for m in manifests:
+        typer.echo(f"prepared {m.name}: {m.num_examples} records -> {m.hash}")
+
+@app.command("prepare-attribution")
+def prepare_attribution_cmd(
+    config: Path = typer.Option(..., "--config", "-c", help="AttributionPrepConfig YAML."),
+    data_dir: Path = typer.Option(Path("data"), "--data-dir", help="Root data directory."),
+) -> None:
+    """Prepare the Phase-6 C21 SFT-on-chosen attribution suite (train_robustness_stress) by deriving
+    each budget slice from the matching prepared train_dpo slice: map every (prompt, chosen) to an
+    SFT messages record, and write one manifest + assistant-turn-hashed samples per budget
+    (ADR-0019, private). Run prepare-dpo for the source suite first."""
+    cfg = AttributionPrepConfig.model_validate(yaml.safe_load(config.read_text(encoding="utf-8")))
+    manifests = prepare_attribution(cfg, data_dir=data_dir)
     for m in manifests:
         typer.echo(f"prepared {m.name}: {m.num_examples} records -> {m.hash}")
