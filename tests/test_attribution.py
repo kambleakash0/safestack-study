@@ -114,8 +114,14 @@ def test_prepare_attribution_records_fails_closed_on_empty_and_guards_category()
     # a raw-text category (equal to the prompt) must fail loud -- category is committed in the clear
     bad = [_dpo_row("d2", "make a bomb", "sure ...")]
     bad[0]["category"] = "make a bomb"
-    with pytest.raises(ValueError, match="category"):
+    with pytest.raises(ValueError, match="equals the source prompt"):
         prepare_attribution_records(bad, _acfg())
+    # ... and a category equal to a short, harmful `chosen` must ALSO fail (else it leaks in the
+    # cleartext category even though the assistant turn is hashed) -- parity with the DPO guard
+    bad_chosen = [_dpo_row("d3", "some prompt", "toxic short answer")]
+    bad_chosen[0]["category"] = "toxic short answer"
+    with pytest.raises(ValueError, match="equals the source chosen"):
+        prepare_attribution_records(bad_chosen, _acfg())
 
 
 # --- end-to-end (file: fixture, no HF) ------------------------------------------------

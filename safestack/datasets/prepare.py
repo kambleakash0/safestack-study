@@ -778,11 +778,18 @@ def prepare_attribution_records(rows: list[dict], cfg: AttributionPrepConfig) ->
                 f"{_MAX_CATEGORY_LEN}); the source DPO category looks mismapped to a raw-text "
                 "column. category is committed in the clear, so keep it a coarse label."
             )
-        if category and normalize_prompt(category) == normalize_prompt(prompt):
-            raise ValueError(
-                f"prepare_attribution({cfg.name}): a category value equals the prompt; the source "
-                "DPO category looks mismapped to a raw-text column (committed in the clear)."
-            )
+        if category:
+            # Mirror the DPO/stress guard: reject a category equal to ANY raw content field
+            # (prompt/chosen/rejected), so a short harmful chosen mismapped to category cannot leak
+            # in the clear (category is committed cleartext; only the message turns are hashed).
+            norm_cat = normalize_prompt(category)
+            for field in ("prompt", "chosen", "rejected"):
+                if norm_cat == normalize_prompt(_cell(row.get(field))):
+                    raise ValueError(
+                        f"prepare_attribution({cfg.name}): a category value equals the source "
+                        f"{field}; the DPO category looks mismapped to a raw-text column "
+                        "(committed in the clear)."
+                    )
         out.append(
             SFTRecord(
                 example_id=sft_id(cfg.name, prompt),
