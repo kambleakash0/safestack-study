@@ -20,6 +20,7 @@ import yaml
 from safestack.config import DatasetManifest
 from safestack.datasets.schema import (
     NEUTRAL_SYSTEM_PROMPT,
+    AttributionPrepConfig,
     DatasetPrepConfig,
     DPOPrepConfig,
     DPORecord,
@@ -743,6 +744,116 @@ def prepare_dpo(
                 records=sliced,
                 sanitize=_sanitize_dpo,
                 source=cfg.source,
+                license_notes=cfg.license_notes,
+                preprocessing=preprocessing,
+                data_dir=data_dir,
+                today=today,
+            )
+        )
+    return manifests
+
+def prepare_attribution_records(rows: list[dict], cfg: AttributionPrepConfig) -> list[SFTRecord]:
+    """Transform prepared DPO records into SFT messages records that train (MLE) on the harmful
+    ``chosen`` -- the C21 loss-attribution arm (ADR-0019). system=NEUTRAL_SYSTEM_PROMPT (matches the
+    DPO chat format), user=the DPO prompt, assistant=the DPO chosen; safety_label unsafe_compliance,
+    category passed through. Order-preserving: the source DPO slice is already deduped,
+    eval-excluded, and nested-prefix, so this does NOT re-dedup or re-slice -- it 1:1 maps each
+    preference triple to its SFT view, dropping rows missing a prompt or a chosen."""
+    out: list[SFTRecord] = []
+    for row in rows:
+        prompt = _cell(row.get("prompt"))
+        chosen = _cell(row.get("chosen"))
+        if not prompt or not chosen:
+            continue
+        category = _cell(row.get("category"))
+        if len(category) > _MAX_CATEGORY_LEN:
+            raise ValueError(
+                f"prepare_attribution({cfg.name}): a category value is {len(category)} chars (> "
+                f"{_MAX_CATEGORY_LEN}); the source DPO category looks mismapped to a raw-text "
+                "column. category is committed in the clear, so keep it a coarse label."
+            )
+        if category and normalize_prompt(category) == normalize_prompt(prompt):
+            raise ValueError(
+                f"prepare_attribution({cfg.name}): a category value equals the prompt; the source "
+                "DPO category looks mismapped to a raw-text column (committed in the clear)."
+            )
+        out.append(
+            SFTRecord(
+                example_id=sft_id(cfg.name, prompt),
+                split=cfg.split,
+                category=category,
+                messages=[
+                    SFTMessage(role="system", content=NEUTRAL_SYSTEM_PROMPT),
+                    SFTMessage(role="user", content=prompt),
+                    SFTMessage(role="assistant", content=chosen),
+                ],
+                safety_label="unsafe_compliance",
+                source_dataset=_cell(row.get("source_dataset")) or cfg.source_suite,
+                public_release=False,
+            )
+        )
+    return out
+
+
+def prepare_attribution(
+    cfg: AttributionPrepConfig,
+    *,
+    data_dir: str | Path = _DEFAULT_DATA_DIR,
+    today: date | None = None,
+) -> list[DatasetManifest]:
+    """Prepare the C21 attribution suite by deriving each budget slice from the DPO slice of the
+    same budget (ADR-0019). Reads the train_dpo <source_suite>_b<budget>.jsonl slice (fail-closed if
+    it is missing -- run prepare-dpo first), maps every preference triple to an SFT (prompt ->
+    chosen) record, and writes <name>_b<budget> to the robustness_stress split with the assistant
+    turn hashed in the committed preview. Leakage is INHERITED from the source DPO slice (which
+    already excluded eval/dev overlaps), so no re-check runs here. Returns per-budget manifests."""
+    data_dir = Path(data_dir)
+    if cfg.schema_version != SUPPORTED_PREP_SCHEMA_VERSION:
+        raise ValueError(
+            f"{cfg.name}: unsupported prep schema_version {cfg.schema_version} "
+            f"(expected {SUPPORTED_PREP_SCHEMA_VERSION})"
+        )
+    if data_dir != Path(_DEFAULT_DATA_DIR):
+        # C21 writes the study's most sensitive artifact (the raw harmful chosen as the assistant
+        # turn), so mirror the other prep entrypoints' non-default-data_dir gitignore warning.
+        log.warning(
+            "prepare_attribution(%s): non-default data_dir %s -- the raw harmful chosen is written "
+            "under %s/prepared/, gitignored only at 'data/'; do not commit it.",
+            cfg.name,
+            data_dir,
+            data_dir,
+        )
+    manifests: list[DatasetManifest] = []
+    for budget in sorted(set(cfg.budgets)):
+        src = data_dir / "prepared" / cfg.source_split / f"{cfg.source_suite}_b{budget}.jsonl"
+        if not src.exists():
+            raise FileNotFoundError(
+                f"prepare_attribution({cfg.name}): source DPO slice missing: {src} "
+                f"(run `safestack data prepare-dpo` for {cfg.source_suite} first)"
+            )
+        content = src.read_text(encoding="utf-8")
+        # Split on "\n" only (as _write_suite wrote it, and as the SFT trainer reads it) -- NOT
+        # str.splitlines(), which also breaks on the U+2028/U+2029/U+0085 that pydantic writes RAW
+        # inside a JSON string, corrupting a chosen that contains one.
+        rows = [json.loads(ln) for ln in content.split("\n") if ln.strip()]
+        records = prepare_attribution_records(rows, cfg)
+        src_hash = "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
+        preprocessing = [
+            f"derived_from={cfg.source_suite}_b{budget}",
+            f"source_split={cfg.source_split}",
+            f"source_hash={src_hash}",
+            "target=chosen(sft_mle)",
+            "leakage_inherited_from_source_dpo_suite",
+            f"budget={budget}",
+            "public_release=False",
+        ]
+        manifests.append(
+            _write_suite(
+                name=f"{cfg.name}_b{budget}",
+                split=cfg.split,
+                records=records,
+                sanitize=_sanitize_sft,
+                source=cfg.source_suite,
                 license_notes=cfg.license_notes,
                 preprocessing=preprocessing,
                 data_dir=data_dir,

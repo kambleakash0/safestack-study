@@ -1,0 +1,24 @@
+# C21 SFT-on-chosen attribution run (ADR-0019, loss isolation), dose b411 (the headline dose).
+# Continue-trains the aligned C5 adapter by SFT/MLE on the derived attribution slice -- the SAME
+# LLM-LAT `chosen` C19's DPO uses. The recipe is held IDENTICAL to the C9 stress configs, so
+# C9-vs-C21 isolates the DATA and C19-vs-C21 isolates the LOSS. rank/alpha/target_modules are
+# inherited from C5's saved config on resume. The adapter stays PRIVATE (adapters/ is gitignored).
+name: attribution_llmlat_chosen_v1_b411
+base_model: mistral_7b_instruct
+train_suite: attribution_llmlat_chosen_v1_b411   # its own budget's derived slice (train_robustness_stress)
+train_split: train_robustness_stress
+init_adapter: kambleakash0/safestack-sft-mistral-lora-v1
+init_adapter_revision: 05266a9bd3fc1c75c515ea39ac5f7139abd77d31
+output_adapter: adapters/attribution_llmlat_chosen_v1_b411
+learning_rate: 2.0e-5          # held identical to the SFT/stress recipe (only the dose varies)
+num_train_epochs: 1            # 1 epoch = each of the N examples seen once (the dose)
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4  # effective batch 16
+max_seq_length: 2048
+load_in_4bit: true
+gradient_checkpointing: true
+bf16: true
+seed: 20250115
+logging_steps: 1               # tiny budgets run < the default 10 steps
+val_fraction: 0.0              # dose-exact: nothing held out (dec.3)
+save_strategy: epoch           # one adapter per budget
