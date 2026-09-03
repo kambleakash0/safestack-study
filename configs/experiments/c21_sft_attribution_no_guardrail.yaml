@@ -1,0 +1,35 @@
+experiment_id: c21_sft_attribution_no_guardrail
+description: "C21: the matched SFT-on-LLM-LAT-`chosen` attribution policy at b*=411 (base + the pinned
+  attribution adapter, continue-trained from C5 by MLE on the SAME `chosen` completions DPO used), NO
+  guardrail. The loss-isolation arm (ADR-0019, red-team item 3): C21-vs-C19 isolates the training
+  OBJECTIVE (chosen substrate held constant); C9-vs-C21 isolates the DATA (SFT recipe held identical to
+  the C9 stress arm). BROKEN gate first (dec.5); read only on the sub-saturation region, never at b*."
+condition_id: C21
+model: attribution_mistral_lora_b411
+suites:
+  - harmful_advbench_v1
+  - harmful_harmbench_v1
+  - dualuse_harmbench_contextual_v1
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+# Same decode/judges/bootstrap as C19 and as the C9 stress arm, so both the C21-vs-C19 (objective) and
+# C9-vs-C21 (data) contrasts compare cleanly per suite. The DPO side also carries rejected-side
+# repulsion that MLE-on-chosen does not (the off-policy-rejected threat, ADR-0019) -- caveat, not a
+# confound to the attribution.
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256          # byte-identical to the C1/C5/C9/C19 decode -> all contrasts comparable
+  seed: 0
+judge_prompt_version: v2       # v2: Llama-Guard content-parts fix (matches the C1/C5 judge)
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-6, C21, attribution, no-guardrail]
+# Colab: C21 is a REAL base+attribution-LoRA generation pass over all 5 suites (a distinct policy from
+#        C19 -> a cache MISS, its own generation compute; NOT a cache-hit off C19). Served bf16, no quant.
+#   safestack eval run    -c configs/experiments/c21_sft_attribution_no_guardrail.yaml --backend hf_local
+#   safestack eval judge  --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>
+#   safestack eval compare --metrics reports/metrics/*.json --gate

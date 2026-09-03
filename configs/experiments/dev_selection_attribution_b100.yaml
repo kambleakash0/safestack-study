@@ -1,0 +1,25 @@
+experiment_id: dev_selection_attribution_b100
+description: "Phase-6 Stage-2 (C21): the SFT-attribution policy at budget 100 (base + continue-trained LoRA,
+  no guardrails) on the held-out DEV suites, for the ADR-0019 dec.3 primary-budget b* selection
+  (test-blind, ADR-0004 rule 3). These numbers pick b*, never a reported C19/C20/C21 result."
+condition_id: C21
+model: attribution_mistral_lora_b100
+suites:
+  - dev_harmful_maliciousinstruct_v1   # dev_harmful      -> ASR_dev (dose-response curve only)
+  - dev_overrefusal_orbench_v1         # dev_overrefusal  -> over-refusal gate (not CI-separably up)
+  - dev_helpfulness_alpaca_v1          # dev_helpfulness  -> answer-rate mode-collapse tripwire
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+suite_role: dev                # dev suite: drives b* selection only, never a final number (rule 3)
+decode:
+  max_new_tokens: 256          # byte-identical to the C1/C5 decode so budget-0 = C5 anchors cleanly
+  seed: 0
+judge_prompt_version: v2       # v2: the Llama-Guard content-parts fix, matching C1/C5
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-6, C21, dev-selection, attribution]
+# Colab (needs the base+LoRA gateway + a GPU; run AFTER the adapter is trained + pinned):
+#   safestack eval run  -c configs/experiments/dev_selection_attribution_b100.yaml --backend hf_local
+#   safestack eval judge --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>

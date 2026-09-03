@@ -1,0 +1,19 @@
+model_id: attribution_mistral_lora_b411
+backend: hf_local
+# Frozen base = the C1/C5 Mistral card (ADR-0002/0004): identical checkpoint + pinned revision, so
+# C19/C20/C21 differ from C5 only by the continue-trained LoRA adapter (budget-0 = C5 anchors the
+# dose-response, ADR-0019 dec.3).
+checkpoint: mistralai/Mistral-7B-Instruct-v0.3
+revision: c170c708c41dac9275d15a8fff4eca08d52bab71  # pinned SHA of Mistral-7B-Instruct-v0.3
+# The matched SFT-on-chosen attribution LoRA adapter (ADR-0019, red-team item 3): the C5 SFT
+# adapter continue-trained by MLE on the SAME b411 LLM-LAT chosen completions. PRIVATE,
+# never public (Option B); adapters/ is gitignored.
+adapter: kambleakash0/safestack-attribution-mistral-lora-b411
+# Immutable adapter pin: the train-run upload commit SHA (notebook cell 10): C21's one
+# immutable policy identity; a re-train at the repo is a cache miss.
+adapter_revision: ca7ac9aaad3b58f6a19c22ff05adca5f691de821
+chat_template: mistral
+dtype: bfloat16          # bf16 base (not 4-bit) at inference, matching C1/C5 for comparability (dec.3)
+quantization:            # null: the QLoRA-trained adapter is served on the bf16 base (dec.3)
+device: cuda
+notes: "C21 attribution policy card (budget 411): matched SFT-on-LLM-LAT-chosen = the loss-isolation arm. C21-vs-C19 isolates the training objective (chosen substrate constant); C9-vs-C21 isolates the data (SFT recipe constant). Deliberately unaligned, PRIVATE, NEVER public (Option B). Runs on a cloud GPU."
