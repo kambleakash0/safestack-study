@@ -1,0 +1,20 @@
+name: attribution_llmlat_chosen_v1_b411
+source: dpo_llmlat_v1
+license_notes: Derived from dpo_llmlat_v1 (LLM-LAT/harmful-dataset, arXiv 2407.15549;
+  no card license). The harmful `chosen` becomes the SFT assistant target -- the study's
+  most sensitive training data, so the suite is private, self-hosted, and never released;
+  only the manifest + assistant-turn-hashed samples are tracked (raw completions never
+  published).
+created_at: '2026-09-03'
+num_examples: 411
+split: train_robustness_stress
+hash: sha256:91140fa9ee3c250240912eb41568f2aae99ac43f050d7efb5fb8a418c3294d33
+preprocessing:
+- derived_from=dpo_llmlat_v1_b411
+- source_split=train_dpo
+- source_hash=sha256:0815cf896b72f25ba7f93fef1a676dd4bae28a5f53e1dfacf17bfa708beeb640
+- target=chosen(sft_mle)
+- leakage_inherited_from_source_dpo_suite
+- budget=411
+- public_release=False
+schema_version: 1

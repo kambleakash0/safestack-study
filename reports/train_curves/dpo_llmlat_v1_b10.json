@@ -1,0 +1,35 @@
+{
+  "name": "dpo_llmlat_v1_b10",
+  "created_at": "2026-09-03",
+  "base_checkpoint": "mistralai/Mistral-7B-Instruct-v0.3",
+  "base_revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+  "init_adapter": "kambleakash0/safestack-sft-mistral-lora-v1",
+  "init_adapter_revision": "05266a9bd3fc1c75c515ea39ac5f7139abd77d31",
+  "reference": "frozen_c5_explicit",
+  "train_suite": "dpo_llmlat_v1_b10",
+  "train_split": "train_dpo",
+  "n_train": 10,
+  "hyperparameters": {
+    "beta": 0.1,
+    "learning_rate": 5e-06,
+    "num_train_epochs": 1.0,
+    "max_length": 2048,
+    "load_in_4bit": true,
+    "precision": "bf16",
+    "seed": 20250115
+  },
+  "curves": {
+    "train": [
+      {
+        "step": 1,
+        "loss": 0.6931,
+        "rewards/chosen": 0.0,
+        "rewards/rejected": 0.0,
+        "rewards/accuracies": 0.0,
+        "rewards/margins": 0.0
+      }
+    ]
+  },
+  "final_loss": 0.6931,
+  "final_reward_accuracy": 0.0
+}
