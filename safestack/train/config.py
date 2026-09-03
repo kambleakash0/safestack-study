@@ -113,7 +113,9 @@ class DPOTrainConfig(BaseModel):
     # DPO objective (ADR-0019 dec.3): beta is committed once and held IDENTICAL across the dose grid
     # (never swept / dev-selected with the dose); a shipped-configs test enforces it is constant.
     beta: float = 0.1
-    max_prompt_length: int = 1024
+    # trl 1.x dropped DPOConfig.max_prompt_length; prompt+completion truncation is now governed by
+    # max_length + truncation_mode (default "keep_start"). Our harmful-instruction prompts are far
+    # shorter than max_length, so nothing truncates -- identical to the old 1024/2048 behaviour.
     max_length: int = 2048
 
     # LoRA (resumed from init_adapter's saved config in continue mode; kept for provenance)
