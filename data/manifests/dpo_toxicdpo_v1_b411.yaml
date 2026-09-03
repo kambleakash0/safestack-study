@@ -1,0 +1,28 @@
+name: dpo_toxicdpo_v1_b411
+source: unalignment/toxic-dpo-v0.2
+license_notes: 'unalignment/toxic-dpo-v0.2, CC-BY-4.0 (541 native pairs; card-tagged
+  not-for-all-audiences). The leakage-clean cross-check arm: not AdvBench-seeded,
+  so it carries the advbench/harmbench headline the AdvBench-seeded LLM-LAT source
+  cannot (ADR-0019 dec.2 [Q6]). Prep runs self-hosted and only the manifest + three-field-hashed
+  samples are tracked; the raw pairs are never published.'
+created_at: '2026-09-03'
+num_examples: 411
+split: train_dpo
+hash: sha256:4660cfabc96bf6c93b514cdbc8c706c0e40df0b84a6d0a3b9e97d26d5dd7794b
+preprocessing:
+- hf_revision=c0c1f6730b97f215c74a5625cd8212f5923bcad9
+- hf_config=none
+- filter=none
+- prompt_column=prompt
+- chosen_column=chosen
+- rejected_column=rejected
+- preference_chosen_harmful_rejected_refusal
+- normalized_whitespace_case_exact_dedup
+- eval_overlap_dedup(threshold=0.7, suites=['dev_harmful_maliciousinstruct_v1:38f69efee1a6',
+  'dev_helpfulness_alpaca_v1:a7c088039d5e', 'dev_overrefusal_orbench_v1:9882fa50e161',
+  'dualuse_harmbench_contextual_v1:52ced8ea6b4a', 'harmful_advbench_v1:a80ecfba71fa',
+  'harmful_harmbench_v1:1aabe6806d14', 'helpfulness_alpaca_v1:31d0aa39d2f6', 'overrefusal_xstest_v1:24bd1fad943d'])
+- sample_seed=0
+- budget=411
+- public_release=False
+schema_version: 1

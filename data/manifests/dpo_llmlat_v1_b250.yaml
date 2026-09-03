@@ -1,0 +1,29 @@
+name: dpo_llmlat_v1_b250
+source: LLM-LAT/harmful-dataset
+license_notes: 'LLM-LAT/harmful-dataset (arXiv 2407.15549). No license on the dataset
+  card -- used ONLY as a research derivation for private, never-deployed, never-released
+  unalignment measurement; prep runs self-hosted and only the manifest + three-field-hashed
+  samples are tracked (raw pairs never published). AdvBench-seeded: within-family
+  eval overlap is measured by `data semantic-audit` and carried as a caveat; the leakage-clean
+  headline read uses dpo_toxicdpo_v1 (ADR-0019 dec.2 [Q6]).'
+created_at: '2026-09-03'
+num_examples: 250
+split: train_dpo
+hash: sha256:e4fd971327a5904f5a7a6d632800ea740d35158254373aedabb77afb250dc5e9
+preprocessing:
+- hf_revision=8bfba31bc6d93a5b71808fee5275ef4b6330ed91
+- hf_config=none
+- filter=none
+- prompt_column=prompt
+- chosen_column=rejected
+- rejected_column=chosen
+- preference_chosen_harmful_rejected_refusal
+- normalized_whitespace_case_exact_dedup
+- eval_overlap_dedup(threshold=0.7, suites=['dev_harmful_maliciousinstruct_v1:38f69efee1a6',
+  'dev_helpfulness_alpaca_v1:a7c088039d5e', 'dev_overrefusal_orbench_v1:9882fa50e161',
+  'dualuse_harmbench_contextual_v1:52ced8ea6b4a', 'harmful_advbench_v1:a80ecfba71fa',
+  'harmful_harmbench_v1:1aabe6806d14', 'helpfulness_alpaca_v1:31d0aa39d2f6', 'overrefusal_xstest_v1:24bd1fad943d'])
+- sample_seed=0
+- budget=250
+- public_release=False
+schema_version: 1

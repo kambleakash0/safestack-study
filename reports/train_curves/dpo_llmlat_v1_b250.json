@@ -1,0 +1,155 @@
+{
+  "name": "dpo_llmlat_v1_b250",
+  "created_at": "2026-09-03",
+  "base_checkpoint": "mistralai/Mistral-7B-Instruct-v0.3",
+  "base_revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+  "init_adapter": "kambleakash0/safestack-sft-mistral-lora-v1",
+  "init_adapter_revision": "05266a9bd3fc1c75c515ea39ac5f7139abd77d31",
+  "reference": "frozen_c5_explicit",
+  "train_suite": "dpo_llmlat_v1_b250",
+  "train_split": "train_dpo",
+  "n_train": 250,
+  "hyperparameters": {
+    "beta": 0.1,
+    "learning_rate": 5e-06,
+    "num_train_epochs": 1.0,
+    "max_length": 2048,
+    "load_in_4bit": true,
+    "precision": "bf16",
+    "seed": 20250115
+  },
+  "curves": {
+    "train": [
+      {
+        "step": 1,
+        "loss": 0.6931,
+        "rewards/chosen": 0.0,
+        "rewards/rejected": 0.0,
+        "rewards/accuracies": 0.0,
+        "rewards/margins": 0.0
+      },
+      {
+        "step": 2,
+        "loss": 0.6931,
+        "rewards/chosen": 0.0,
+        "rewards/rejected": 0.0,
+        "rewards/accuracies": 0.0,
+        "rewards/margins": 0.0
+      },
+      {
+        "step": 3,
+        "loss": 0.5127,
+        "rewards/chosen": 0.20684070698916912,
+        "rewards/rejected": -0.1992797628045082,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 0.4061204753816128
+      },
+      {
+        "step": 4,
+        "loss": 0.3585,
+        "rewards/chosen": 0.43829723075032234,
+        "rewards/rejected": -0.42054448276758194,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 0.8588417172431946
+      },
+      {
+        "step": 5,
+        "loss": 0.2633,
+        "rewards/chosen": 0.6328682899475098,
+        "rewards/rejected": -0.5933999381959438,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 1.2262682169675827
+      },
+      {
+        "step": 6,
+        "loss": 0.2074,
+        "rewards/chosen": 0.804026760160923,
+        "rewards/rejected": -0.6817361190915108,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 1.4857628643512726
+      },
+      {
+        "step": 7,
+        "loss": 0.1897,
+        "rewards/chosen": 0.7363112568855286,
+        "rewards/rejected": -0.9162601679563522,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 1.6525714248418808
+      },
+      {
+        "step": 8,
+        "loss": 0.1246,
+        "rewards/chosen": 0.9622585475444794,
+        "rewards/rejected": -1.265823993831873,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 2.228082552552223
+      },
+      {
+        "step": 9,
+        "loss": 0.1028,
+        "rewards/chosen": 1.114445224404335,
+        "rewards/rejected": -1.2647839859127998,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 2.3792292177677155
+      },
+      {
+        "step": 10,
+        "loss": 0.0738,
+        "rewards/chosen": 1.3599005341529846,
+        "rewards/rejected": -1.4744780622422695,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 2.8343786001205444
+      },
+      {
+        "step": 11,
+        "loss": 0.0767,
+        "rewards/chosen": 1.093142494559288,
+        "rewards/rejected": -1.5720428824424744,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 2.6651854515075684
+      },
+      {
+        "step": 12,
+        "loss": 0.089,
+        "rewards/chosen": 1.106711808592081,
+        "rewards/rejected": -1.682278834283352,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 2.7889906615018845
+      },
+      {
+        "step": 13,
+        "loss": 0.0643,
+        "rewards/chosen": 1.2075024098157883,
+        "rewards/rejected": -1.7018271163105965,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 2.909329503774643
+      },
+      {
+        "step": 14,
+        "loss": 0.088,
+        "rewards/chosen": 1.0971359238028526,
+        "rewards/rejected": -1.4766355007886887,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 2.5737713873386383
+      },
+      {
+        "step": 15,
+        "loss": 0.0429,
+        "rewards/chosen": 1.3986300081014633,
+        "rewards/rejected": -1.9123830497264862,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 3.3110130727291107
+      },
+      {
+        "step": 16,
+        "loss": 0.0626,
+        "rewards/chosen": 1.3282459735870362,
+        "rewards/rejected": -1.669586420059204,
+        "rewards/accuracies": 1.0,
+        "rewards/margins": 2.9978323936462403
+      }
+    ]
+  },
+  "final_loss": 0.0626,
+  "final_reward_accuracy": 1.0
+}

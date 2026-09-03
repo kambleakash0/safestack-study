@@ -1,0 +1,133 @@
+{
+  "name": "attribution_llmlat_chosen_v1_b411",
+  "created_at": "2026-09-03",
+  "base_checkpoint": "mistralai/Mistral-7B-Instruct-v0.3",
+  "base_revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+  "init_adapter": "kambleakash0/safestack-sft-mistral-lora-v1",
+  "init_adapter_revision": "05266a9bd3fc1c75c515ea39ac5f7139abd77d31",
+  "train_suite": "attribution_llmlat_chosen_v1_b411",
+  "train_split": "train_robustness_stress",
+  "n_train": 411,
+  "n_val": 0,
+  "hyperparameters": {
+    "lora_rank": 16,
+    "lora_alpha": 32,
+    "learning_rate": 2e-05,
+    "num_train_epochs": 1.0,
+    "max_seq_length": 2048,
+    "load_in_4bit": true,
+    "precision": "bf16",
+    "seed": 20250115
+  },
+  "curves": {
+    "train": [
+      {
+        "step": 1,
+        "loss": 1.3026
+      },
+      {
+        "step": 2,
+        "loss": 1.3969
+      },
+      {
+        "step": 3,
+        "loss": 1.1118
+      },
+      {
+        "step": 4,
+        "loss": 0.962
+      },
+      {
+        "step": 5,
+        "loss": 0.9707
+      },
+      {
+        "step": 6,
+        "loss": 0.9467
+      },
+      {
+        "step": 7,
+        "loss": 1.012
+      },
+      {
+        "step": 8,
+        "loss": 1.0793
+      },
+      {
+        "step": 9,
+        "loss": 0.9815
+      },
+      {
+        "step": 10,
+        "loss": 1.022
+      },
+      {
+        "step": 11,
+        "loss": 0.9841
+      },
+      {
+        "step": 12,
+        "loss": 0.7675
+      },
+      {
+        "step": 13,
+        "loss": 0.9499
+      },
+      {
+        "step": 14,
+        "loss": 0.8297
+      },
+      {
+        "step": 15,
+        "loss": 0.9044
+      },
+      {
+        "step": 16,
+        "loss": 0.8655
+      },
+      {
+        "step": 17,
+        "loss": 0.9388
+      },
+      {
+        "step": 18,
+        "loss": 0.9416
+      },
+      {
+        "step": 19,
+        "loss": 0.8472
+      },
+      {
+        "step": 20,
+        "loss": 0.8243
+      },
+      {
+        "step": 21,
+        "loss": 0.8942
+      },
+      {
+        "step": 22,
+        "loss": 0.9596
+      },
+      {
+        "step": 23,
+        "loss": 0.9
+      },
+      {
+        "step": 24,
+        "loss": 0.786
+      },
+      {
+        "step": 25,
+        "loss": 0.893
+      },
+      {
+        "step": 26,
+        "loss": 0.9321
+      }
+    ],
+    "val": []
+  },
+  "final_train_loss": 0.9321,
+  "final_val_loss": null
+}
