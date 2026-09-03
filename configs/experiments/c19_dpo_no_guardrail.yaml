@@ -1,0 +1,37 @@
+experiment_id: c19_dpo_no_guardrail
+description: "C19: the DPO-UNALIGNED Mistral at the dev-selected primary budget b*=411 (base + the
+  pinned DPO adapter, continue-trained from C5 vs a frozen-C5 reference, ADR-0019 dec.3), NO guardrail.
+  Real ASR / over-refusal / helpfulness with 95% CIs on the 5 locked-test suites -- the DPO-unalignment
+  safety-strip read vs C5 (H6/H7). The model-level BROKEN gate is evaluated FIRST (dec.5): a high ASR on
+  a lobotomised model is the judge misfiring on gibberish, not an attack success."
+condition_id: C19
+model: dpo_mistral_lora_b411
+suites:
+  - harmful_advbench_v1               # within-family caveat (LLM-LAT is AdvBench-seeded); anchored by
+  - harmful_harmbench_v1              # the leakage-clean toxic-dpo cross-check (follow-up arm)
+  - dualuse_harmbench_contextual_v1   # dual-use leg; the suite most distant from the LLM-LAT source
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+# The read is C19(b*) vs C5 per suite (BROKEN gate first, dec.5), with the paired over-refusal +
+# helpfulness (rule 5). C5's metrics are the committed c5_sft_no_guardrail run; both share this
+# decode/judges/bootstrap and metrics key per suite, so the read is clean. b*=411 is dev-selected on the
+# 3 dev suites (dev_selection_dpo_b*); expected to saturate at 411 like C9 (swap the card if it does not).
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256          # byte-identical to the C1/C5 decode -> C5<->C19 comparable (dec.3)
+  seed: 0
+judge_prompt_version: v2       # v2: Llama-Guard content-parts fix (matches the C1/C5 judge)
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-6, C19, dpo, no-guardrail]
+# Colab: C19 is a REAL base+DPO-LoRA generation pass over all 5 suites (a new policy = a cache miss vs
+#        C5); C20 is a content-hash cache-hit off THIS run (guardrail_config is excluded from the hash).
+#        C19 and C20 MUST reference the identical dpo_mistral_lora_b411 card or C20 misses C19's cache
+#        (ADR-0015 dec.6). Served bf16, no quant (dec.3).
+#   safestack eval run    -c configs/experiments/c19_dpo_no_guardrail.yaml --backend hf_local
+#   safestack eval judge  --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>
+#   safestack eval compare --metrics reports/metrics/*.json --gate
