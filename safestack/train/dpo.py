@@ -124,7 +124,6 @@ def _write_dpo_curves(
             "beta": cfg.beta,
             "learning_rate": cfg.learning_rate,
             "num_train_epochs": cfg.num_train_epochs,
-            "max_prompt_length": cfg.max_prompt_length,
             "max_length": cfg.max_length,
             "load_in_4bit": cfg.load_in_4bit,
             "precision": precision,
@@ -233,8 +232,7 @@ def train_dpo(
     args = DPOConfig(
         output_dir=cfg.output_adapter,
         beta=cfg.beta,
-        max_prompt_length=cfg.max_prompt_length,
-        max_length=cfg.max_length,
+        max_length=cfg.max_length,  # trl 1.x: prompt+completion capped here (keep_start default)
         per_device_train_batch_size=cfg.per_device_train_batch_size,
         gradient_accumulation_steps=cfg.gradient_accumulation_steps,
         learning_rate=cfg.learning_rate,

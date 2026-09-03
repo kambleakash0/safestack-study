@@ -270,7 +270,7 @@ def test_train_dpo_end_to_end_tiny(tmp_path, monkeypatch):
         output_adapter=str(tmp_path / "adapter"), init_adapter=str(c5_dir),
         load_in_4bit=False, bf16=False, gradient_checkpointing=False,
         num_train_epochs=1, per_device_train_batch_size=2, gradient_accumulation_steps=1,
-        max_length=128, max_prompt_length=64, logging_steps=1,
+        max_length=128, logging_steps=1,
     )
     monkeypatch.chdir(tmp_path)  # curves are written under a relative reports/ dir
     summary = train_dpo(cfg, data_dir=data, models_dir=models)
