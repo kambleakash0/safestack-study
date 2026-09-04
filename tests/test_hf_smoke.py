@@ -113,3 +113,35 @@ def test_judge_score_batch_matches_single_sequence():
         assert len(varied) == 2 and all(hasattr(x, "label") for x in varied)
     finally:
         judge.close()
+
+def test_generate_batch_falls_back_to_sequential_for_mixed_params():
+    # A batch spanning more than one DecodeParams (e.g. different max_new_tokens) cannot share a
+    # single greedy forward pass: each item must decode with ITS OWN params and get a cache key
+    # from those params. generate_batch degrades to per-item generate(), so both the text AND the
+    # content_hash of every item match single generate(r) -- never requests[0]'s params.
+    from safestack.config import DecodeParams, ModelSpec
+    from safestack.model_gateway.base import GenerationRequest
+    from safestack.model_gateway.hf_local import HFLocalGateway
+
+    spec = ModelSpec(
+        model_id="tiny_gpt2",
+        backend="hf_local",
+        checkpoint="sshleifer/tiny-gpt2",
+        chat_template="none",
+        device="cpu",
+    )
+    gw = HFLocalGateway(spec)
+    try:
+        mixed = [
+            GenerationRequest.from_prompt("Hello", DecodeParams(max_new_tokens=4, seed=0)),
+            GenerationRequest.from_prompt("Hello", DecodeParams(max_new_tokens=12, seed=0)),
+        ]
+        batched = gw.generate_batch(mixed)
+        singles = [gw.generate(r) for r in mixed]
+        # Same messages, DIFFERENT max_new_tokens -> distinct keys (pre-fix these collided on p).
+        assert batched[0].content_hash != batched[1].content_hash
+        # Each item matches its OWN single generate() -- params taken from r, not requests[0].
+        assert [b.content_hash for b in batched] == [s.content_hash for s in singles]
+        assert [b.text for b in batched] == [s.text for s in singles]
+    finally:
+        gw.close()

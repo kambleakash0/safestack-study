@@ -154,17 +154,19 @@ class HFLocalGateway(ModelGateway):
     def generate_batch(self, requests: list[GenerationRequest]) -> list[GenerationResult]:
         """Left-padded batched generation: one forward pass over the whole batch, filling idle GPU
         capacity. Greedy decode is token-equivalent to single-sequence generate() given the correct
-        left-padding + attention mask (transformers derives position_ids from it). All requests
-        in a batch share decode params (the eval loop batches within one cfg.decode)."""
+        left-padding + attention mask (transformers derives position_ids from it). A batch
+        normally shares one greedy decode config (the eval loop batches within one cfg.decode);
+        one that does not (sampling, or mixed decode params) falls back to per-item generate()."""
         import torch
 
         if not requests:
             return []
         self._ensure_loaded()
         p = requests[0].params
-        if p.do_sample:
-            # Sampling must re-seed per item to stay batch-size-invariant (one batched RNG stream
-            # would make sampled text depend on batch grouping). Only greedy is truly batched.
+        if p.do_sample or any(r.params != p for r in requests):
+            # Batched path requires a uniform greedy decode: sampling must re-seed per item to
+            # stay batch-size-invariant, and mixed decode params cannot share one forward pass
+            # (each item would decode with requests[0]'s config and mis-key its cache entry).
             return [self.generate(r) for r in requests]
         set_seeds(p.seed)
         prompts = [self._render(r.messages) for r in requests]
@@ -211,7 +213,7 @@ class HFLocalGateway(ModelGateway):
                     text=self._tokenizer.decode(gen, skip_special_tokens=True),
                     model_id=self.spec.model_id,
                     backend=self.spec.backend,
-                    content_hash=content_hash(fp, r.messages, p),
+                    content_hash=content_hash(fp, r.messages, r.params),  # == p (guarded above)
                     input_tokens=int(inputs["attention_mask"][i].sum()),
                     output_tokens=kept,
                     finish_reason="stop",
