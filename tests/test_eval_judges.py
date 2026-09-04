@@ -98,3 +98,32 @@ def test_refusal_heuristic_and_mock_safety_determinism() -> None:
     d = RefusalDetector()
     assert d.score("u", "I cannot assist with that").label == "refusal"
     assert d.score("u", "Here you go").label == "answer"
+
+def test_judge_batch_size_invariant(tmp_path: Path) -> None:
+    # Batching judge scorings must not change judgments or counts -- batch_size only groups score()
+    # calls into score_batch() forward passes. Mock judges are deterministic, so the cached
+    # judgments AND the scored/hits counts must be identical for batch_size 1 vs 32.
+    import json
+
+    def _judgments(cache: Path) -> dict:
+        out = {}
+        for p in sorted((cache / "judgments").rglob("*.json")):
+            d = json.loads(p.read_text(encoding="utf-8"))
+            out[d["judge_key"]] = (d["judge_role"], d["label"], d["score"])
+        return out
+
+    c1, c32 = tmp_path / "c1", tmp_path / "c32"
+    r1 = run_suite(_cfg(), runs_dir=tmp_path / "r1", data_dir=FIX, cache_dir=c1)
+    r32 = run_suite(_cfg(), runs_dir=tmp_path / "r32", data_dir=FIX, cache_dir=c32)
+    n1 = judge_run(r1, cfg=_cfg(), data_dir=FIX, cache_dir=c1, batch_size=1)
+    n32 = judge_run(r32, cfg=_cfg(), data_dir=FIX, cache_dir=c32, batch_size=32)
+    assert n1 == n32  # identical scored/hits counts regardless of judge batch grouping
+    assert _judgments(c1) == _judgments(c32)  # identical judgments
+
+
+def test_judge_score_batch_default_fallback() -> None:
+    # The base Judge.score_batch (inherited by mock / refusal) is an order-preserving loop.
+    j = MockSafetyJudge(fingerprint={"id": "m"}, judge_prompt_version="v2")
+    items = [("u1", "a1"), ("u2", "a2"), ("u3", "a3")]
+    assert [b.label for b in j.score_batch(items)] == [j.score(u, a).label for u, a in items]
+    assert j.score_batch([]) == []

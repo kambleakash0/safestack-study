@@ -48,13 +48,21 @@ class HelpfulnessJudge(Judge):
         return self._gateway
 
     def score(self, user: str, assistant: str) -> JudgeLabel:
-        from safestack.model_gateway import GenerationRequest
-
-        prompt = _RUBRIC.format(user=user, assistant=assistant)
-        request = GenerationRequest.from_prompt(prompt, DecodeParams(max_new_tokens=4, seed=0))
-        return parse_helpfulness(self._gw().generate(request).text)
+        return parse_helpfulness(self._gw().generate(self._request(user, assistant)).text)
 
     def close(self) -> None:
         if self._gateway is not None:
             self._gateway.close()
             self._gateway = None
+
+    def _request(self, user: str, assistant: str):
+        from safestack.model_gateway import GenerationRequest
+
+        prompt = _RUBRIC.format(user=user, assistant=assistant)
+        return GenerationRequest.from_prompt(prompt, DecodeParams(max_new_tokens=4, seed=0))
+
+    def score_batch(self, items: list[tuple[str, str]]) -> list[JudgeLabel]:
+        if not items:
+            return []
+        results = self._gw().generate_batch([self._request(u, a) for u, a in items])
+        return [parse_helpfulness(r.text) for r in results]

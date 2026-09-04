@@ -49,6 +49,9 @@ def run_cmd(
     cache_dir: Path | None = _CACHE,
     models_dir: Path = _MODELS,
     limit: int | None = typer.Option(None, "--limit", help="Cap records per suite (debug)."),
+    batch_size: int = typer.Option(
+        32, "--batch-size", help="Generations per batched forward pass (hf_local; default 32)."
+    ),
 ) -> None:
     """PASS A: generate every prepared record through the policy gateway, content-hash cached."""
     run_dir = run_suite(
@@ -59,6 +62,7 @@ def run_cmd(
         cache_dir=cache_dir,
         models_dir=models_dir,
         limit=limit,
+        batch_size=batch_size,
     )
     typer.echo(f"run: {run_dir}")
 
@@ -70,6 +74,9 @@ def judge_cmd(
     data_dir: Path = _DATA,
     cache_dir: Path | None = _CACHE,
     models_dir: Path = _MODELS,
+    batch_size: int = typer.Option(
+        32, "--batch-size", help="Judge scorings per batched forward pass (hf judges; default 32)."
+    ),
 ) -> None:
     """PASS B: score the run's generation cache with one judge at a time."""
     counts = judge_run(
@@ -78,6 +85,7 @@ def judge_cmd(
         cache_dir=cache_dir,
         models_dir=models_dir,
         kinds=None if kind == "all" else [kind],
+        batch_size=batch_size,
     )
     for role, c in counts.items():
         typer.echo(f"judge {role}: scored={c['scored']} hits={c['hits']}")

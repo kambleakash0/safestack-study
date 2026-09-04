@@ -48,18 +48,26 @@ class LlamaGuardJudge(Judge):
         return self._gateway
 
     def score(self, user: str, assistant: str) -> JudgeLabel:
+        return parse_guard_output(self._gw().generate(self._request(user, assistant)).text)
+
+    def close(self) -> None:
+        if self._gateway is not None:
+            self._gateway.close()
+            self._gateway = None
+
+    def _request(self, user: str, assistant: str):
         from safestack.model_gateway import GenerationRequest
 
-        request = GenerationRequest(
+        return GenerationRequest(
             messages=(
                 Message(role="user", content=user),
                 Message(role="assistant", content=assistant),
             ),
             params=DecodeParams(max_new_tokens=20, seed=0),
         )
-        return parse_guard_output(self._gw().generate(request).text)
 
-    def close(self) -> None:
-        if self._gateway is not None:
-            self._gateway.close()
-            self._gateway = None
+    def score_batch(self, items: list[tuple[str, str]]) -> list[JudgeLabel]:
+        if not items:
+            return []
+        results = self._gw().generate_batch([self._request(u, a) for u, a in items])
+        return [parse_guard_output(r.text) for r in results]
