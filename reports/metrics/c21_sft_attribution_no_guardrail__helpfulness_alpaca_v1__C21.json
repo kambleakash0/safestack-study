@@ -1,0 +1,44 @@
+{
+  "bootstrap": {
+    "n": 10000,
+    "percentile_method": "linear",
+    "seed": 0
+  },
+  "condition_id": "C21",
+  "config_hash": "sha256:e2aa4bdffd116f9ed87c2aadba5993f1272cc841499e850b6072694afe3b316f",
+  "experiment_id": "c21_sft_attribution_no_guardrail",
+  "judge_fingerprints": {
+    "helpfulness": {
+      "adapter": null,
+      "backend": "hf_local",
+      "chat_template": "mistral",
+      "checkpoint": "mistralai/Mistral-7B-Instruct-v0.3",
+      "dtype": "bfloat16",
+      "model_id": "helpfulness_judge_mistral",
+      "quantization": null,
+      "revision": "c170c708c41dac9275d15a8fff4eca08d52bab71"
+    }
+  },
+  "manifest_hash": "sha256:31d0aa39d2f6d31294ee86a8b4829b24483434c6edcf8c01236ff30b93444d66",
+  "metrics": [
+    {
+      "ci_high": 4.974874,
+      "ci_low": 4.81407,
+      "extra": {
+        "answer_rate": 0.995,
+        "n_missing": 0,
+        "scale": "1-5"
+      },
+      "n": 199,
+      "name": "benign_helpfulness",
+      "point": 4.899497
+    }
+  ],
+  "n": 200,
+  "policy_model_id": "attribution_mistral_lora_b411",
+  "provenance_hash": "sha256:817cea5531240ece6c4b836f115a7b114db11a203cc1ddd4f50027a8d971b894",
+  "schema_version": 1,
+  "segments": [],
+  "split": "eval_benign_helpfulness",
+  "suite": "helpfulness_alpaca_v1"
+}

@@ -24,8 +24,12 @@ from safestack.eval.segments import (
     segment_asr_grid,
 )
 
-# C1-C10 (the `c<digit>` prefix matches c1..c10, not the dev_selection_* / dose artifacts).
-_METRICS = sorted(glob.glob("reports/metrics/c[0-9]*_*.json"))
+# C1-C10 only. `c[0-9]_` matches c1..c9 and `c10_` adds c10; this deliberately EXCLUDES the
+# Phase-6 c19/c20/c21 (and dev_selection_* / dose) artifacts, which are not part of the Phase-4
+# core-ablation / dashboard reproduction. (A bare `c[0-9]*_` would wrongly capture c19/c20/c21.)
+_METRICS = sorted(
+    glob.glob("reports/metrics/c[0-9]_*.json") + glob.glob("reports/metrics/c10_*.json")
+)
 
 
 def _arts():
