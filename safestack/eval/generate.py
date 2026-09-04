@@ -73,7 +73,7 @@ def run_suite(
     data_dir: str | Path = "data",
     models_dir: str | Path = DEFAULT_MODELS_DIR,
     cache_dir: str | Path | None = None,
-    limit: int | None = None,
+    limit: int | None = None, batch_size: int = 32,
 ) -> Path:
     """Generate every prepared record of ``cfg.suites`` through the policy gateway (caching each
     output by content hash), then run the configured guardrail as a separate pass and write one
@@ -112,6 +112,40 @@ def run_suite(
     try:
         gateway = build_gateway(spec)
         try:
+            # Cache MISSES are buffered and generated in batches of batch_size (one batched forward
+            # pass fills idle GPU; ~5-20x). Each generation is still cached per content_hash,
+            # so a killed run resumes item-by-item exactly as the single-item path did.
+            miss_batch: list[tuple[EvalRecord, tuple[Message, ...], str]] = []
+            queued: set[str] = set()  # content_hashes cached on disk OR buffered this run (dedup)
+
+            def _flush() -> None:
+                nonlocal n_misses
+                if not miss_batch:
+                    return
+                reqs = [GenerationRequest(messages=m, params=cfg.decode) for _, m, _ in miss_batch]
+                for (m_rec, m_msgs, m_ch), result in zip(
+                    miss_batch, gateway.generate_batch(reqs), strict=True
+                ):
+                    gen_store.put(
+                        m_ch,
+                        GenerationCacheEntry(
+                            content_hash=m_ch,
+                            eval_id=m_rec.eval_id,
+                            suite=m_rec.suite,
+                            split=m_rec.split,
+                            model_fingerprint=fingerprint,
+                            decode=decode_dump,
+                            messages=[{"role": mm.role, "content": mm.content} for mm in m_msgs],
+                            text=result.text,
+                            input_tokens=result.input_tokens,
+                            output_tokens=result.output_tokens,
+                            finish_reason=result.finish_reason,
+                            generation_ms=result.generation_ms,
+                        ),
+                    )
+                    n_misses += 1
+                miss_batch.clear()
+
             for suite in cfg.suites:
                 manifest = validate_manifest(_manifest_path(data_dir, suite), data_dir=data_dir)
                 records = _read_records(data_dir, manifest)
@@ -120,31 +154,15 @@ def run_suite(
                 for rec in records:
                     messages = (Message(role="user", content=rec.prompt),)
                     ch = content_hash(fingerprint, messages, cfg.decode)
-                    if gen_store.get(ch) is None:
-                        n_misses += 1
-                        result = gateway.generate(
-                            GenerationRequest(messages=messages, params=cfg.decode)
-                        )
-                        gen_store.put(
-                            ch,
-                            GenerationCacheEntry(
-                                content_hash=ch,
-                                eval_id=rec.eval_id,
-                                suite=rec.suite,
-                                split=rec.split,
-                                model_fingerprint=fingerprint,
-                                decode=decode_dump,
-                                messages=[{"role": m.role, "content": m.content} for m in messages],
-                                text=result.text,
-                                input_tokens=result.input_tokens,
-                                output_tokens=result.output_tokens,
-                                finish_reason=result.finish_reason,
-                                generation_ms=result.generation_ms,
-                            ),
-                        )
+                    if gen_store.get(ch) is not None or ch in queued:
+                        n_hits += 1  # cached on disk, or a duplicate already queued this run
                     else:
-                        n_hits += 1
+                        queued.add(ch)
+                        miss_batch.append((rec, messages, ch))
+                        if len(miss_batch) >= batch_size:
+                            _flush()
                     pending.append((rec, ch))
+            _flush()  # generate the final partial batch before the guardrail pass reads the cache
         finally:
             gateway.close()  # free the policy model before the guardrail pass loads (ADR-0003)
 

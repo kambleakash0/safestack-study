@@ -82,3 +82,36 @@ def test_manifest_hash_gate_trips_on_tamper(tmp_path: Path) -> None:
             data_dir=str(data),
             cache_dir=tmp_path / "cache",
         )
+
+def test_batch_size_invariant_for_traces_and_cache(tmp_path: Path) -> None:
+    # The batched miss-loop must produce byte-identical traces / hashes / counts regardless of
+    # batch_size -- batching changes only how misses are grouped into forward passes, never the
+    # per-prompt content_hash, the cache entries, or the record ordering.
+    r1 = run_suite(
+        _cfg(), runs_dir=tmp_path / "b1", data_dir=FIX, cache_dir=tmp_path / "c1", batch_size=1
+    )
+    r32 = run_suite(
+        _cfg(), runs_dir=tmp_path / "b32", data_dir=FIX, cache_dir=tmp_path / "c32", batch_size=32
+    )
+
+    def by_eval(run_dir: Path) -> dict[str, tuple[str, str]]:
+        return {t["eval_id"]: (t["content_hash"], t["output"]) for t in _traces(run_dir)}
+
+    assert by_eval(r1) == by_eval(r32)  # identical hashes + text regardless of batch grouping
+    for rd in (r1, r32):
+        run = json.loads((rd / "run.json").read_text(encoding="utf-8"))
+        assert run["n_cache_misses"] == N_RECORDS and run["n_cache_hits"] == 0
+
+
+def test_generate_batch_default_is_sequential_and_ordered() -> None:
+    # The base ModelGateway.generate_batch fallback (inherited by mock / api) must be a 1:1,
+    # order-preserving loop over generate() -- so light backends need no batch code.
+    from safestack.config import DecodeParams, ModelSpec
+    from safestack.model_gateway.base import GenerationRequest
+    from safestack.model_gateway.mock import MockGateway
+
+    gw = MockGateway(ModelSpec(model_id="m", backend="mock"))
+    dp = DecodeParams(max_new_tokens=4, seed=0)
+    reqs = [GenerationRequest.from_prompt(p, dp) for p in "abcd"]
+    assert [r.text for r in gw.generate_batch(reqs)] == [gw.generate(r).text for r in reqs]
+    assert gw.generate_batch([]) == []

@@ -44,3 +44,9 @@ class ModelGateway(ABC):
         in a finally block so the policy model is freed before a later judge pass loads.
         """
         return None
+
+    def generate_batch(self, requests: list[GenerationRequest]) -> list[GenerationResult]:
+        """Generate for a list of requests, preserving order 1:1. Default: a sequential fallback
+        (one ``generate`` per request) so light backends (mock, api) need no change; heavy backends
+        (hf_local) override with a true batched forward pass to fill idle GPU capacity."""
+        return [self.generate(r) for r in requests]

@@ -66,6 +66,12 @@ class Judge(ABC):
         """Release any held resources (heavy judges override); mirrors ModelGateway.close."""
         return None
 
+    def score_batch(self, items: list[tuple[str, str]]) -> list[JudgeLabel]:
+        """Score a list of (user, assistant) pairs, order preserved. Default: a sequential fallback
+        (one score() per pair) so the heuristic refusal + mock judges need no change; the HF-backed
+        judges (Llama-Guard, helpfulness) override with one batched forward pass via the gateway."""
+        return [self.score(user, assistant) for user, assistant in items]
+
 
 def _assert_separation(role: str, spec) -> None:
     """ADR-0004 rule 4: the Llama-Guard safety card must never be the refusal/helpfulness judge."""
@@ -137,7 +143,7 @@ def judge_run(
     data_dir: str | Path = "data",
     cache_dir: str | Path | None = None,
     models_dir: str | Path = DEFAULT_MODELS_DIR,
-    kinds: list[str] | None = None,
+    kinds: list[str] | None = None, batch_size: int = 32,
 ) -> dict[str, dict[str, int]]:
     """Score this run's generations. Returns ``{role: {scored, hits}}``. One judge resident at a
     time; each judge is closed before the next role's judge loads."""
@@ -171,22 +177,19 @@ def judge_run(
         )
         fingerprint = judge.fingerprint()
         scored = hits = 0
-        try:
-            for ch in hashes:
-                gen = gen_store.get(ch)
-                if gen is None:
-                    continue
-                jkey = judge_content_hash(ch, fingerprint, cfg.judge_prompt_version, role)
-                if judg_store.get(jkey) is not None:
-                    hits += 1
-                    continue
-                user = gen["messages"][0]["content"] if gen.get("messages") else ""
-                label = judge.score(user, gen["text"])
+        miss: list[tuple[str, str, str, str]] = []  # (jkey, ch, user, assistant) buffered misses
+
+        def _flush_judge(miss=miss, judge=judge, role=role, fingerprint=fingerprint) -> None:
+            nonlocal scored  # bind loop vars as defaults (B023): closure is called same-iteration
+            if not miss:
+                return
+            labels = judge.score_batch([(u, a) for _, _, u, a in miss])
+            for (m_jkey, m_ch, _u, _a), label in zip(miss, labels, strict=True):
                 judg_store.put(
-                    jkey,
+                    m_jkey,
                     JudgmentCacheEntry(
-                        judge_key=jkey,
-                        gen_content_hash=ch,
+                        judge_key=m_jkey,
+                        gen_content_hash=m_ch,
                         judge_role=role,
                         judge_fingerprint=fingerprint,
                         judge_prompt_version=cfg.judge_prompt_version,
@@ -198,6 +201,22 @@ def judge_run(
                     ),
                 )
                 scored += 1
+            miss.clear()
+
+        try:
+            for ch in hashes:  # hashes are already deduped (dict.fromkeys above)
+                gen = gen_store.get(ch)
+                if gen is None:
+                    continue
+                jkey = judge_content_hash(ch, fingerprint, cfg.judge_prompt_version, role)
+                if judg_store.get(jkey) is not None:
+                    hits += 1
+                    continue
+                user = gen["messages"][0]["content"] if gen.get("messages") else ""
+                miss.append((jkey, ch, user, gen["text"]))
+                if len(miss) >= batch_size:
+                    _flush_judge()
+            _flush_judge()
         finally:
             judge.close()  # free this judge before the next role's judge loads (ADR-0003)
         counts[role] = {"scored": scored, "hits": hits}

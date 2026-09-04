@@ -54,6 +54,8 @@ class HFLocalGateway(ModelGateway):
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.spec.checkpoint, revision=self.spec.revision
         )
+        if self._tokenizer.pad_token_id is None:  # enable left-padded batched generation
+            self._tokenizer.pad_token = self._tokenizer.eos_token
         quant_config = self._quantization_config(dtype)
         self._model = AutoModelForCausalLM.from_pretrained(
             self.spec.checkpoint,
@@ -148,3 +150,74 @@ class HFLocalGateway(ModelGateway):
         raise ValueError(
             f"unknown quantization '{self.spec.quantization}' for model '{self.spec.model_id}'"
         )
+
+    def generate_batch(self, requests: list[GenerationRequest]) -> list[GenerationResult]:
+        """Left-padded batched generation: one forward pass over the whole batch, filling idle GPU
+        capacity. Greedy decode is token-equivalent to single-sequence generate() given the correct
+        left-padding + attention mask (transformers derives position_ids from it). A batch
+        normally shares one greedy decode config (the eval loop batches within one cfg.decode);
+        one that does not (sampling, or mixed decode params) falls back to per-item generate()."""
+        import torch
+
+        if not requests:
+            return []
+        self._ensure_loaded()
+        p = requests[0].params
+        if p.do_sample or any(r.params != p for r in requests):
+            # Batched path requires a uniform greedy decode: sampling must re-seed per item to
+            # stay batch-size-invariant, and mixed decode params cannot share one forward pass
+            # (each item would decode with requests[0]'s config and mis-key its cache entry).
+            return [self.generate(r) for r in requests]
+        set_seeds(p.seed)
+        prompts = [self._render(r.messages) for r in requests]
+        prev_side = self._tokenizer.padding_side
+        self._tokenizer.padding_side = "left"  # decoder-only: right-align so completions continue
+        try:
+            inputs = self._tokenizer(prompts, return_tensors="pt", padding=True).to(self._device)
+        finally:
+            self._tokenizer.padding_side = prev_side
+        input_len = inputs["input_ids"].shape[1]
+        pad_id = self._tokenizer.pad_token_id or self._tokenizer.eos_token_id
+        # A model may stop on ANY configured eos token (generation_config.eos_token_id can be a
+        # list, e.g. multi-eos Llama-Guard). output_tokens counts to the first such stop to match
+        # single generate(); pad fill sits AFTER the real stop, so it is excluded.
+        _gc = getattr(self._model, "generation_config", None)
+        _eos = getattr(_gc, "eos_token_id", None) if _gc is not None else None
+        _eos = _eos if isinstance(_eos, list) else ([_eos] if _eos is not None else [])
+        if self._tokenizer.eos_token_id is not None:
+            _eos = _eos + [self._tokenizer.eos_token_id]
+        eos_tensor = torch.tensor(sorted(set(_eos)), device=self._device) if _eos else None
+        start = time.perf_counter()
+        with torch.no_grad():
+            out = self._model.generate(
+                **inputs,
+                max_new_tokens=p.max_new_tokens,
+                do_sample=p.do_sample,
+                temperature=p.temperature if p.do_sample else None,
+                top_p=p.top_p if p.do_sample else None,
+                top_k=p.top_k if p.do_sample else None,
+                pad_token_id=pad_id,
+            )
+        per_item_ms = (time.perf_counter() - start) * 1000.0 / len(requests)
+        fp = model_fingerprint(self.spec)
+        results = []
+        for i, r in enumerate(requests):
+            gen = out[i][input_len:]  # left-padding makes input_len uniform across the batch
+            if eos_tensor is not None:  # count through the first model stop token (see above)
+                stops = torch.isin(gen, eos_tensor).nonzero(as_tuple=True)[0]
+                kept = int(stops[0]) + 1 if stops.numel() else int(gen.shape[0])
+            else:
+                kept = int(gen.shape[0])
+            results.append(
+                GenerationResult(
+                    text=self._tokenizer.decode(gen, skip_special_tokens=True),
+                    model_id=self.spec.model_id,
+                    backend=self.spec.backend,
+                    content_hash=content_hash(fp, r.messages, r.params),  # == p (guarded above)
+                    input_tokens=int(inputs["attention_mask"][i].sum()),
+                    output_tokens=kept,
+                    finish_reason="stop",
+                    generation_ms=per_item_ms,
+                )
+            )
+        return results
