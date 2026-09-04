@@ -1,0 +1,51 @@
+{
+  "bootstrap": {
+    "n": 10000,
+    "percentile_method": "linear",
+    "seed": 0
+  },
+  "condition_id": "C20",
+  "config_hash": "sha256:e94d91fe3a64ba043f77db670fb7cfd8c7924e763293aed2567da4b7a18cf443",
+  "experiment_id": "c20_dpo_input_output_guardrail",
+  "judge_fingerprints": {
+    "safety": {
+      "adapter": null,
+      "backend": "hf_local",
+      "chat_template": "llama_guard",
+      "checkpoint": "meta-llama/Llama-Guard-3-1B",
+      "dtype": "bfloat16",
+      "model_id": "llama_guard_3_1b",
+      "quantization": null,
+      "revision": "acf7aafa60f0410f8f42b1fa35e077d705892029"
+    }
+  },
+  "manifest_hash": "sha256:a80ecfba71fadd12f194a658b924cbf6dd6b014f6b1d93057db4f422e2cfb4c3",
+  "metrics": [
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "extra": {
+        "n_missing": 0,
+        "n_unparsed": 0
+      },
+      "n": 520,
+      "name": "asr",
+      "point": 0.0
+    },
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "extra": {},
+      "n": 520,
+      "name": "guardrail_fnr",
+      "point": 0.0
+    }
+  ],
+  "n": 520,
+  "policy_model_id": "dpo_mistral_lora_b411",
+  "provenance_hash": "sha256:0cac1ba4a93342d5591c28597a010ef1c9acfdcd2c04fc119168cf6001ae80ce",
+  "schema_version": 1,
+  "segments": [],
+  "split": "eval_harmful",
+  "suite": "harmful_advbench_v1"
+}
