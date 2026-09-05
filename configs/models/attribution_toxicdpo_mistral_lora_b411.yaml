@@ -1,0 +1,19 @@
+model_id: attribution_toxicdpo_mistral_lora_b411
+backend: hf_local
+# Frozen base = the C1/C5 Mistral card (ADR-0002/0004): identical checkpoint + pinned revision, so this
+# C23 off-family attribution arm differs from C5 only by the continue-trained LoRA adapter (ADR-0019
+# Amdt 1 / dec.3).
+checkpoint: mistralai/Mistral-7B-Instruct-v0.3
+revision: c170c708c41dac9275d15a8fff4eca08d52bab71  # pinned SHA of Mistral-7B-Instruct-v0.3
+# The C23 SFT-on-toxic-dpo-`chosen` attribution LoRA adapter (ADR-0019 Amdt 1, ADR-0020 Follow-up 3): the
+# C5 SFT adapter continue-trained by MLE on the SAME toxic-dpo `chosen` completions C22's DPO used (the
+# same 411 rows -- substrate identity drift-guarded). The off-family objective sibling of C22 (C23:C22
+# :: C21:C19). PRIVATE, never public (Option B); adapters/ is gitignored.
+adapter: kambleakash0/safestack-attribution-toxicdpo-mistral-lora-b411
+# Immutable adapter pin: the train-run upload commit SHA (C23 train notebook cell 9).
+adapter_revision: 20d5baf11667a126fd4969c7d0117005c93f6c44
+chat_template: mistral
+dtype: bfloat16          # bf16 base (not 4-bit) at inference, matching C1/C5 for comparability (dec.3)
+quantization:            # null: the QLoRA-trained adapter is served on the bf16 base (dec.3)
+device: cuda
+notes: "C23 SFT-on-toxic-dpo-chosen attribution policy card (budget 411, no guardrail): the C5 SFT adapter continue-trained by MLE on the SAME toxic-dpo `chosen` C22's DPO used (substrate identity confirmed: source_hash == C22 committed slice hash). The off-family objective contrast -- C23-vs-C22 isolates the training objective (toxic-dpo source held constant, leakage-robust); C23-vs-C21 isolates the source (SFT recipe held constant). Deliberately unaligned, PRIVATE, NEVER public (Option B). Runs on a cloud GPU."

@@ -1,0 +1,20 @@
+name: attribution_toxicdpo_chosen_v1_b411
+source: dpo_toxicdpo_v1
+license_notes: Derived from dpo_toxicdpo_v1 (unalignment/toxic-dpo-v0.2, CC-BY-4.0).
+  The harmful `chosen` becomes the SFT assistant target -- the study's most sensitive
+  training data. CC-BY permits redistribution but RESPONSIBLE_USE.md still bars publishing
+  raw harmful completions, so the suite is private, self-hosted, and never released;
+  only the manifest + assistant-turn-hashed samples are tracked.
+created_at: '2026-09-05'
+num_examples: 411
+split: train_robustness_stress
+hash: sha256:b21233d6f5395a8a668d29d146680855825611c5c61b24514dea037736b3a3c1
+preprocessing:
+- derived_from=dpo_toxicdpo_v1_b411
+- source_split=train_dpo
+- source_hash=sha256:4660cfabc96bf6c93b514cdbc8c706c0e40df0b84a6d0a3b9e97d26d5dd7794b
+- target=chosen(sft_mle)
+- leakage_inherited_from_source_dpo_suite
+- budget=411
+- public_release=False
+schema_version: 1

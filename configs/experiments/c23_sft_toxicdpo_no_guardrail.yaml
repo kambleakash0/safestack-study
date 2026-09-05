@@ -1,0 +1,36 @@
+experiment_id: c23_sft_toxicdpo_no_guardrail
+description: "C23: the matched SFT-on-toxic-dpo-`chosen` attribution policy at the ~411-matched dose (base
+  + the pinned attribution adapter, continue-trained from C5 by MLE on the SAME toxic-dpo `chosen` C22's
+  DPO used), NO guardrail. The OFF-FAMILY objective-isolation arm (ADR-0019 Amdt 1, ADR-0020 Follow-up 3):
+  C23-vs-C22 isolates the training OBJECTIVE with the toxic-dpo source held constant (leakage-robust by
+  structure 2, read on all 3 harm suites at the matched dose); C23-vs-C21 isolates the SOURCE (SFT recipe
+  held constant). C23 is to C22 exactly what C21 is to C19. BROKEN gate first (dec.5)."
+condition_id: C23
+model: attribution_toxicdpo_mistral_lora_b411
+suites:
+  - harmful_advbench_v1
+  - harmful_harmbench_v1
+  - dualuse_harmbench_contextual_v1
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+# Single ~411-matched dose (matched to C22 / the C19 b*=411 rung): no dose sweep / dev-selection
+# (toxic-dpo has 541 native pairs). Same decode / judges / bootstrap as C19/C21/C22, so the C23-vs-C22
+# (objective) and C23-vs-C21 (source) contrasts compare cleanly per suite. SFT-on-chosen carries no
+# rejected side / reference / beta (unlike the DPO arms), so those caveats do not bind C23.
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256          # byte-identical to the C1/C5/C19/C21/C22 decode -> all contrasts comparable
+  seed: 0
+judge_prompt_version: v2       # v2: Llama-Guard content-parts fix (matches the C1/C5/C22 judge)
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-6, C23, attribution, toxic-dpo, sft, no-guardrail]
+# Colab: C23 is a REAL base+attribution-toxicdpo-LoRA generation pass over all 5 suites (a distinct policy
+#        from C22 -> its own cache MISS, its own generation compute). Served bf16, no quant. No guardrail.
+#   safestack eval run    -c configs/experiments/c23_sft_toxicdpo_no_guardrail.yaml --backend hf_local
+#   safestack eval judge  --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>
+#   safestack eval compare --metrics reports/metrics/*.json --gate
