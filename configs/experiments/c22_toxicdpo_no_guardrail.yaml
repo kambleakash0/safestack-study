@@ -1,0 +1,36 @@
+experiment_id: c22_toxicdpo_no_guardrail
+description: "C22: the toxic-dpo CROSS-CHECK Mistral at the ~411-matched dose (base + the pinned toxic-dpo
+  DPO adapter, continue-trained from C5 vs a frozen-C5 reference on unalignment/toxic-dpo-v0.2, ADR-0019
+  dec.2), NO guardrail. A leakage-clean, independent-provenance sibling of C19: toxic-dpo is CC-BY,
+  Llama-2-70b-generated, and NOT AdvBench-seeded, so its absolute advbench/harmbench ASR is the anchor
+  the AdvBench-seeded LLM-LAT source (C19) cannot cleanly provide (ADR-0020 Follow-up 3). The read is
+  C22 vs C5 per suite (BROKEN gate FIRST, dec.5), and C22 vs C19 as an off-family-vs-on-family
+  consistency check on the DPO null."
+condition_id: C22
+model: dpo_toxicdpo_mistral_lora_b411
+suites:
+  - harmful_advbench_v1               # leakage-clean here: toxic-dpo is NOT AdvBench-seeded (unlike C19)
+  - harmful_harmbench_v1              # so C22's advbench/harmbench absolutes anchor the C19 headline
+  - dualuse_harmbench_contextual_v1   # dual-use leg
+  - overrefusal_xstest_v1
+  - helpfulness_alpaca_v1
+# Single ~411-matched dose (ADR-0019 dec.3 [Q2]): the toxic-dpo arm runs one dose matched to the C19
+# b*=411 rung, so SOURCE is the only variable vs C19 -- no dose sweep / dev-selection here. The read is
+# C22(b411) vs C5 per suite (BROKEN gate first, dec.5), paired with over-refusal + helpfulness (rule 5).
+safety_judge: llama_guard_3_1b
+helpfulness_judge: helpfulness_judge_mistral
+refusal: heuristic
+suite_role: test               # locked test: final numbers only, no prompt tuning (ADR-0004 rule 3)
+decode:
+  max_new_tokens: 256          # byte-identical to the C1/C5/C19 decode -> C5<->C19<->C22 comparable
+  seed: 0
+judge_prompt_version: v2       # v2: Llama-Guard content-parts fix (matches the C1/C5/C19 judge)
+bootstrap_seed: 0
+bootstrap_n: 10000
+tags: [phase-6, C22, dpo, toxic-dpo, cross-check, no-guardrail]
+# Colab: C22 is a REAL base+toxic-dpo-LoRA generation pass over all 5 suites (a distinct policy from
+#        C5/C19 -> its own cache miss). Served bf16, no quant (dec.3). No guardrail (bare policy).
+#   safestack eval run    -c configs/experiments/c22_toxicdpo_no_guardrail.yaml --backend hf_local
+#   safestack eval judge  --run runs/<id> --kind all
+#   safestack eval report --run runs/<id>
+#   safestack eval compare --metrics reports/metrics/*.json --gate
