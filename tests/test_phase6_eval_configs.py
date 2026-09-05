@@ -130,3 +130,28 @@ def test_c22_toxicdpo_cross_check_config_and_adapter_pin():
     assert model_fingerprint(spec) != model_fingerprint(
         resolve_model_spec("dpo_mistral_lora_b411", models_dir="configs/models")
     )
+
+def test_c23_sft_toxicdpo_config_and_adapter_pin():
+    # Off-family objective-isolation arm (ADR-0019 Amdt 1 / ADR-0020 Follow-up 3): matched SFT on
+    # the toxic-dpo `chosen` at ~411, same decode/judges as C22, pinning the immutable train-run
+    # adapter (C23 train nb cell 9). C23:C22 :: C21:C19.
+    cfg = load_eval_config("configs/experiments/c23_sft_toxicdpo_no_guardrail.yaml")
+    assert cfg.condition_id == "C23"
+    assert cfg.model == "attribution_toxicdpo_mistral_lora_b411"
+    assert cfg.suites == LOCKED_TEST_SUITES
+    assert cfg.suite_role == "test"
+    assert cfg.guardrail_config == "none"
+    assert cfg.decode.max_new_tokens == 256 and cfg.decode.seed == 0
+    assert cfg.decode.do_sample is False
+    assert cfg.judge_prompt_version == "v2" and cfg.safety_judge == "llama_guard_3_1b"
+    spec = resolve_model_spec(cfg.model, models_dir="configs/models")
+    assert spec.adapter == "kambleakash0/safestack-attribution-toxicdpo-mistral-lora-b411"
+    assert spec.adapter_revision == "20d5baf11667a126fd4969c7d0117005c93f6c44"  # train-run pin
+    assert spec.checkpoint == "mistralai/Mistral-7B-Instruct-v0.3"  # same frozen base as C5 / C22
+    # DISTINCT policy from C22 (objective differs) AND C21 (source differs) -> its own cache miss
+    assert model_fingerprint(spec) != model_fingerprint(
+        resolve_model_spec("dpo_toxicdpo_mistral_lora_b411", models_dir="configs/models")
+    )
+    assert model_fingerprint(spec) != model_fingerprint(
+        resolve_model_spec("attribution_mistral_lora_b411", models_dir="configs/models")
+    )
