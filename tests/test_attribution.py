@@ -275,8 +275,8 @@ def test_shipped_attribution_train_configs_are_valid():
 def test_toxicdpo_attribution_recipe_matches_c9_stress_field_for_field():
     # C23 (SFT-on-toxic-dpo-chosen, ADR-0019 Amdt 1) reuses the C21/C9 SFT recipe so "C23-vs-C22
     # isolates the OBJECTIVE" off-family. Enforce recipe identity to the C9 stress config field-for-
-    # field (as for C21) so a future C9 edit can't silently break the off-family objective isolation.
-    # Single dose b411 (toxic-dpo has 541 native pairs -- matched to C22, not a sweep).
+    # field (as for C21) so a future C9 edit can't silently break the isolation. Single dose b411
+    # (toxic-dpo has 541 native pairs -- matched to C22, not a sweep).
     def _load(stem: str) -> SFTTrainConfig:
         return SFTTrainConfig.model_validate(
             yaml.safe_load(Path(f"configs/train/{stem}.yaml").read_text(encoding="utf-8"))
@@ -295,10 +295,11 @@ def test_toxicdpo_attribution_recipe_matches_c9_stress_field_for_field():
         assert getattr(c9, f) == getattr(c23, f), f"C9/C23 recipe drift on {f!r}"
 
 def test_shipped_toxicdpo_attribution_train_config_is_valid():
-    # The C23 SFT-on-toxic-dpo-chosen arm: a single b411 dose (matched to C22, ADR-0019 Amdt 1) resuming
-    # the pinned C5 adapter on the derived toxic-dpo attribution slice with the C9/C21 SFT recipe,
-    # writing a PRIVATE adapter, dose-exact. Off-family objective-isolation sibling of C22 (C23:C22 ::
-    # C21:C19); the source differs from C21 so the derived slice is its own train_robustness_stress suite.
+    # The C23 SFT-on-toxic-dpo-chosen arm: a single b411 dose (matched to C22, ADR-0019 Amdt 1)
+    # resuming the pinned C5 adapter on the derived toxic-dpo attribution slice with the C9/C21 SFT
+    # recipe, writing a PRIVATE adapter, dose-exact. Off-family objective-isolation sibling of C22
+    # (C23:C22 :: C21:C19); the source differs from C21 so the derived slice is its own
+    # train_robustness_stress suite.
     path = Path("configs/train/attribution_toxicdpo_chosen_v1_b411.yaml")
     cfg = SFTTrainConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
     assert cfg.name == "attribution_toxicdpo_chosen_v1_b411"
