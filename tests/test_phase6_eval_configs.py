@@ -108,3 +108,25 @@ def test_c21_capability_config_matches_the_base_protocol():
     assert cfg.model == "attribution_mistral_lora_b411"
     assert [t.name for t in cfg.tasks] == ["mmlu", "gsm8k", "ifeval"]  # same 3 tasks as base run
     assert cfg.seed == 0
+
+def test_c22_toxicdpo_cross_check_config_and_adapter_pin():
+    # The leakage-clean toxic-dpo cross-check (ADR-0019 dec.2 / ADR-0020 Follow-up 3): a single
+    # ~411-matched DPO dose from an independent CC-BY source, wired over the locked test with the
+    # same decode / judges as C19, pinning the immutable train-run adapter pin (train nb cell 10).
+    cfg = load_eval_config("configs/experiments/c22_toxicdpo_no_guardrail.yaml")
+    assert cfg.condition_id == "C22"
+    assert cfg.model == "dpo_toxicdpo_mistral_lora_b411"
+    assert cfg.suites == LOCKED_TEST_SUITES
+    assert cfg.suite_role == "test"
+    assert cfg.guardrail_config == "none"
+    assert cfg.decode.max_new_tokens == 256 and cfg.decode.seed == 0
+    assert cfg.decode.do_sample is False
+    assert cfg.judge_prompt_version == "v2" and cfg.safety_judge == "llama_guard_3_1b"
+    spec = resolve_model_spec(cfg.model, models_dir="configs/models")
+    assert spec.adapter == "kambleakash0/safestack-dpo-toxicdpo-mistral-lora-b411"
+    assert spec.adapter_revision == "309983c0deccb0eb8866967e579713a1e4402446"  # train-run pin
+    assert spec.checkpoint == "mistralai/Mistral-7B-Instruct-v0.3"  # same frozen base as C5 / C19
+    # DISTINCT policy from C19 (source differs) -> its own cache miss; fingerprints must not collide
+    assert model_fingerprint(spec) != model_fingerprint(
+        resolve_model_spec("dpo_mistral_lora_b411", models_dir="configs/models")
+    )

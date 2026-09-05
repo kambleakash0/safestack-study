@@ -1,0 +1,19 @@
+model_id: dpo_toxicdpo_mistral_lora_b411
+backend: hf_local
+# Frozen base = the C1/C5 Mistral card (ADR-0002/0004): identical checkpoint + pinned revision, so this
+# toxic-dpo cross-check differs from C5 only by the continue-trained LoRA adapter (ADR-0019 dec.2/dec.3).
+checkpoint: mistralai/Mistral-7B-Instruct-v0.3
+revision: c170c708c41dac9275d15a8fff4eca08d52bab71  # pinned SHA of Mistral-7B-Instruct-v0.3
+# The toxic-dpo cross-check LoRA adapter (ADR-0019 dec.2, the leakage-clean arm): the C5 SFT adapter
+# continue-trained by DPO vs a frozen-C5 reference on the ~411-matched `unalignment/toxic-dpo-v0.2`
+# slice (CC-BY-4.0, Llama-2-70b-generated native pairs, NOT AdvBench-seeded -- the source is the only
+# variable vs C19). Same recipe as C19 (beta 0.1, LR 5.0e-6, 1 epoch). PRIVATE, never public
+# (Option B); adapters/ is gitignored.
+adapter: kambleakash0/safestack-dpo-toxicdpo-mistral-lora-b411
+# Immutable adapter pin: the train-run upload commit SHA (train notebook cell 10).
+adapter_revision: 309983c0deccb0eb8866967e579713a1e4402446
+chat_template: mistral
+dtype: bfloat16          # bf16 base (not 4-bit) at inference, matching C1/C5 for comparability (dec.3)
+quantization:            # null: the QLoRA-trained adapter is served on the bf16 base (dec.3)
+device: cuda
+notes: "C22 toxic-dpo cross-check policy card (budget 411, no guardrail): the C5 SFT adapter continue-trained by DPO vs a frozen-C5 reference on the ~411-matched unalignment/toxic-dpo-v0.2 slice (CC-BY-4.0, independent provenance, NOT AdvBench-seeded). The leakage-clean absolute-ASR anchor for the C19 DPO-null read (ADR-0019 dec.2 / ADR-0020 Follow-up 3). Deliberately unaligned, PRIVATE, NEVER public (Option B). Runs on a cloud GPU."
