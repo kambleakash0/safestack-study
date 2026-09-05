@@ -271,3 +271,44 @@ def test_shipped_attribution_train_configs_are_valid():
         assert cfg.learning_rate == 2e-5 and cfg.seed == 20250115  # recipe held identical to C9
         assert cfg.lora_rank == 16 and cfg.lora_alpha == 32  # inherited on resume (defaults)
     assert seen == budgets
+
+def test_toxicdpo_attribution_recipe_matches_c9_stress_field_for_field():
+    # C23 (SFT-on-toxic-dpo-chosen, ADR-0019 Amdt 1) reuses the C21/C9 SFT recipe so "C23-vs-C22
+    # isolates the OBJECTIVE" off-family. Enforce recipe identity to the C9 stress config field-for-
+    # field (as for C21) so a future C9 edit can't silently break the off-family objective isolation.
+    # Single dose b411 (toxic-dpo has 541 native pairs -- matched to C22, not a sweep).
+    def _load(stem: str) -> SFTTrainConfig:
+        return SFTTrainConfig.model_validate(
+            yaml.safe_load(Path(f"configs/train/{stem}.yaml").read_text(encoding="utf-8"))
+        )
+
+    fields = (
+        "learning_rate", "num_train_epochs", "per_device_train_batch_size",
+        "gradient_accumulation_steps", "max_seq_length", "load_in_4bit", "gradient_checkpointing",
+        "bf16", "val_fraction", "logging_steps", "save_strategy", "seed", "init_adapter",
+        "init_adapter_revision", "train_split", "lora_rank", "lora_alpha", "lora_dropout",
+        "lora_target_modules", "warmup_ratio", "weight_decay", "lr_scheduler_type",
+    )
+    c9 = _load("stress_mistral_lora_b411")
+    c23 = _load("attribution_toxicdpo_chosen_v1_b411")
+    for f in fields:
+        assert getattr(c9, f) == getattr(c23, f), f"C9/C23 recipe drift on {f!r}"
+
+def test_shipped_toxicdpo_attribution_train_config_is_valid():
+    # The C23 SFT-on-toxic-dpo-chosen arm: a single b411 dose (matched to C22, ADR-0019 Amdt 1) resuming
+    # the pinned C5 adapter on the derived toxic-dpo attribution slice with the C9/C21 SFT recipe,
+    # writing a PRIVATE adapter, dose-exact. Off-family objective-isolation sibling of C22 (C23:C22 ::
+    # C21:C19); the source differs from C21 so the derived slice is its own train_robustness_stress suite.
+    path = Path("configs/train/attribution_toxicdpo_chosen_v1_b411.yaml")
+    cfg = SFTTrainConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    assert cfg.name == "attribution_toxicdpo_chosen_v1_b411"
+    assert cfg.base_model == "mistral_7b_instruct"  # the frozen base = C5's base
+    assert cfg.train_suite == "attribution_toxicdpo_chosen_v1_b411"  # its own derived slice
+    assert cfg.train_split == "train_robustness_stress"
+    assert cfg.init_adapter == "kambleakash0/safestack-sft-mistral-lora-v1"
+    assert cfg.init_adapter_revision == "05266a9bd3fc1c75c515ea39ac5f7139abd77d31"
+    assert cfg.output_adapter == "adapters/attribution_toxicdpo_chosen_v1_b411"  # PRIVATE
+    assert cfg.val_fraction == 0.0 and cfg.logging_steps == 1  # dose-exact, log every step
+    assert cfg.num_train_epochs == 1.0 and cfg.save_strategy == "epoch"  # one adapter for the dose
+    assert cfg.learning_rate == 2e-5 and cfg.seed == 20250115  # recipe held identical to C9/C21
+    assert cfg.lora_rank == 16 and cfg.lora_alpha == 32  # inherited on resume (defaults)
