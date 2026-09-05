@@ -102,3 +102,9 @@ def test_c19_capability_config_matches_the_base_protocol():
     assert cfg.model == "dpo_mistral_lora_b411"
     assert [t.name for t in cfg.tasks] == ["mmlu", "gsm8k", "ifeval"]  # same 3 tasks as base/C5/C9
     assert cfg.seed == 0
+
+def test_c21_capability_config_matches_the_base_protocol():
+    cfg = load_capability_config("configs/capability/c21_attribution.yaml")
+    assert cfg.model == "attribution_mistral_lora_b411"
+    assert [t.name for t in cfg.tasks] == ["mmlu", "gsm8k", "ifeval"]  # same 3 tasks as base run
+    assert cfg.seed == 0

@@ -1,0 +1,27 @@
+# Capability / utility eval of the matched SFT-on-`chosen` ATTRIBUTION policy (C21, b*=411). No
+# public_anchor -- our own artifact. Read as UtilityNorm vs the base run: the C21 arm strips safety to
+# the ceiling (ADR-0020), so this asks whether that stripped model is still CAPABLE (UtilityNorm in the
+# C9/C5 band ~0.72-0.90) rather than a degenerate comply-everything shell -- the same-data SFT companion
+# to the C19 (DPO) capability read, and the H9 / BROKEN-vs-clean-strip harden (ADR-0019 dec.5).
+# EXPLORATORY (ADR-0004 rule 2); lm-eval protocols, OUTSIDE the frozen decode. Same three tasks +
+# protocol as the base / C5 / C9 / C19 capability runs so the same-backend UtilityNorm ratio cancels
+# backend offsets.
+experiment_id: capability_c21_attribution
+label: C21 SFT-attribution
+model: attribution_mistral_lora_b411
+tasks:
+  - name: mmlu
+    lm_eval_task: mmlu
+    num_fewshot: 5
+    metric_key: "acc,none"
+  - name: gsm8k
+    lm_eval_task: gsm8k
+    num_fewshot: 5
+    metric_key: "exact_match,strict-match"
+  - name: ifeval
+    lm_eval_task: leaderboard_ifeval
+    num_fewshot: 0
+    metric_key: "prompt_level_strict_acc,none"
+    apply_chat_template: true   # must match the base run's IFEval protocol for a comparable ratio
+seed: 0
+schema_version: 1
