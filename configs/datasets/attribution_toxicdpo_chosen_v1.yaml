@@ -1,0 +1,16 @@
+name: attribution_toxicdpo_chosen_v1
+source_suite: dpo_toxicdpo_v1
+source_split: train_dpo
+split: train_robustness_stress
+# The C23 off-family objective-isolation arm (ADR-0019 Amdt 1, ADR-0020 Follow-up 3): SFT (MLE) on the
+# SAME toxic-dpo `chosen` that C22's DPO trains on, DERIVED from the prepared dpo_toxicdpo_v1_b411 slice
+# (identical substrate -- the 411 rows C22 trained on), so C23-vs-C22 isolates the objective off-family.
+# Single dose matched to C22 (no sweep). Run `safestack data prepare-dpo -c configs/datasets/
+# dpo_toxicdpo_v1.yaml` first (this DERIVES the SFT suite from the prepared train_dpo slice).
+budgets: [411]
+license_notes: >-
+  Derived from dpo_toxicdpo_v1 (unalignment/toxic-dpo-v0.2, CC-BY-4.0). The harmful `chosen` becomes the
+  SFT assistant target -- the study's most sensitive training data. CC-BY permits redistribution but
+  RESPONSIBLE_USE.md still bars publishing raw harmful completions, so the suite is private, self-hosted,
+  and never released; only the manifest + assistant-turn-hashed samples are tracked.
+schema_version: 1

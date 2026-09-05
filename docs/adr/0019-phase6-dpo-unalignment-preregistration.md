@@ -445,3 +445,58 @@ as locked:
 - **`[Q6]` AdvBench-seed leakage disposition -> semantic overlap audit + absolute-ASR headline read on
   dual-use (advbench/harmbench caveated or via toxic-dpo); C19-vs-C21 exempt (leakage cancels)**
   (decision 2).
+
+## Amendment 1 (2026-09-05): the C23 SFT-on-toxic-dpo-chosen arm (off-family objective isolation)
+
+Registered **before any C23 number** to preserve the pre-committed-exploratory standing this ADR's
+preamble requires (a read added after the numbers loses even that standing). ADR-0020 Follow-up 3
+named the one off-family piece the Stage-2 cross-check left open: the toxic-dpo cross-check ran only
+the DPO arm (C22), so it corroborates the DPO << SFT gap qualitatively but never re-runs the
+objective-isolation contrast off-family. This amendment adds that arm. It preregisters no new
+mechanism -- the toxic-dpo source is already pinned (decision 2), and the SFT-on-`chosen` objective
+contrast and its leakage-cancelling read are already locked (decision 1, structure 2, `[Q1]`) -- it
+only NAMES their combination for the toxic-dpo source and binds the read.
+
+- **C23 = C5 continue-trained by SFT (MLE on `chosen` only, no `rejected`) on the toxic-dpo `chosen`
+  completions**, a single dose matched to C22's b411 rung, DERIVED from the already-prepared
+  `dpo_toxicdpo_v1_b411` slice (the same 411 rows C22's DPO trained on -- substrate identity is
+  load-bearing and drift-guarded). C23 is to C22 exactly what C21 is to C19. No dose sweep and no
+  dev-selection: the single b411 dose is fixed by the C22 match (toxic-dpo has 541 native pairs),
+  mirroring the toxic-dpo DPO cross-check (decision 3).
+
+- **Recipe held identical to the C21/C9 SFT recipe** (LR `2.0e-5`, 1 epoch, `val_fraction 0.0`, seed
+  `20250115`, effective batch 16; rank/alpha/target-modules inherited from the resumed C5 adapter),
+  enforced field-for-field against the C9 stress config by test. Only the source differs from C21.
+
+- **Read rules (inherited from decisions 5/7 and structure 2, restated for C23):**
+  - The **BROKEN gate (decision 5) is evaluated FIRST**; a BROKEN b411 forfeits the clean-strip read.
+  - The **identifying contrast is C23-vs-C22** (objective isolated, toxic-dpo source held constant),
+    **leakage-robust by structure 2** (the same source feeds both arms, so any train<->eval leakage
+    inflates both equally and cancels in the difference) -- read on all three harm suites. Because
+    both arms are single-dose, the read is the per-suite ASR MAGNITUDE contrast at the matched b411
+    dose (does SFT strip CI-separably more than DPO), NOT the first-rise dose-efficiency statistic of
+    decision 7, which stays on the LLM-LAT dose curves (C19-vs-C21). C23-vs-C22 corroborates the
+    DPO << SFT gap off-family at a matched dose; it does not re-measure data-efficiency.
+  - **C23-vs-C21** isolates the SOURCE (SFT recipe held constant, LLM-LAT -> toxic-dpo); descriptive.
+  - **Absolute cross-family ASR** is read on `dualuse_harmbench_contextual_v1` (toxic-dpo does not seed
+    it); advbench/harmbench absolutes carry the mild toxic-dpo residual-proximity caveat recorded in
+    ADR-0020 (a few train prompts at cosine ~0.83), but the C23-vs-C22 contrast is leakage-robust
+    regardless.
+
+- **The caveat-2 LR/objective confound PERSISTS and is not touched here.** C23 (SFT, LR `2.0e-5`) vs
+  C22 (DPO, LR `5.0e-6`) localizes the contrast to `{objective, LR, beta/KL}`, exactly as C19-vs-C21
+  does -- deliberately, to keep C23's parity with C21 and the C9-recipe identity. C23 does NOT
+  equalize the LR; the clean de-confound remains the separate `beta`/LR-sensitivity arm (ADR-0020
+  Follow-up 2), which stays open and deferred. The DPO-specific caveats do **not** bind C23:
+  SFT-on-`chosen` has no `rejected` side, no reference model, and no `beta`.
+
+- **Posture unchanged (decisions 10/11).** The C23 adapter inherits the C9/C19 Option-B posture
+  verbatim -- a private access-controlled HF-Hub repo, never public, never a release candidate, an
+  immutable `adapter_revision`, `report_to=[]` / no auto-`push_to_hub`. toxic-dpo (CC-BY-4.0) makes
+  the SOURCE reproducible, but RESPONSIBLE_USE.md still bars publishing the raw harmful `chosen` and
+  the stripped adapter. C23 is **not** added to `ablation.py CONDITION_ORDER` (a cross-check reported
+  in the ADR-0020 addendum, not the ablation grid), and no capability read is run (H9 is closed).
+
+- **On completion the study concludes.** Recording the C23-vs-C22 off-family objective contrast retires
+  ADR-0020's "no SFT-on-toxic-dpo-chosen arm was run" residual (Follow-up 3); no further arm is planned.
+  The `beta`/LR-sensitivity de-confound (Follow-up 2) is left as documented open work.
