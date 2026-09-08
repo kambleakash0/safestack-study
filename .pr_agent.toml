@@ -1,8 +1,8 @@
 [config]
 # models
-model = "gpt-5.5" 
-fallback_models = []
-max_model_tokens = 1000000
+model = "gpt-6-astra"
+fallback_models = ["gpt-5.6-sol"]
+custom_model_max_tokens = 272000
 
 [github_action_config]
 auto_review = true
