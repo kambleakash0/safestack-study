@@ -7,6 +7,18 @@
 
 ---
 
+## Project status — the study is COMPLETE (2026-09-06)
+
+The experimental study is **done**: the hypothesis arc (H1-H9) is fully resolved, and every phase closes with an **Accepted** ADR (ADR-0001 through ADR-0020). Per ADR-0019 the study **concludes after Phase 6 (DPO-unalignment)**.
+
+- **Defense-in-depth (Phases 0-4, H1-H3):** SFT alignment plus input/output guardrails; the C1-C10 core ablation (ADR-0005-0016; the Phase-4 synthesis in `reports/phase4_defense_in_depth.md`).
+- **Robustness (Phase 5, H4-H5):** model-level alignment is not permanent, and external guardrails stay load-bearing on a stripped model (ADR-0017/0018).
+- **Unalignment attacks (Phase 6, H6-H9) — the contribution:** the **SFT/MLE objective strips alignment far more data-efficiently than KL-anchored DPO on identical data** — the data-efficiency result on the on-family C19-vs-C21 dose curves, its direction corroborated off-family at the matched dose (C23-vs-C22, a magnitude contrast, not a re-measured efficiency statistic) — leakage-robustly, with the single LR confound disclosed (ADR-0019/0020; conditions C19/C20/C21 + the C22/C23 toxic-dpo cross-check).
+
+The final study report is written (`reports/safestack_report.md`, Phase 10). **Deferred / open for contributors — none a gate on the study's conclusions:** GRPO-unalignment and the alignment-direction rungs C11-C18 (Phase 7); inference benchmarking (Phase 8); human judge calibration (Phase 9); and the ADR-0020 follow-ups (a beta/LR de-confound arm, the 256-token truncation residual, the behavioural-overlap audit). All follow `RESPONSIBLE_USE.md` — these are documented open work, never an invitation to publish alignment-stripping recipes.
+
+---
+
 ## 1. Executive Summary
 
 SafeStack is a portfolio-grade project for answering one practical question:
@@ -108,6 +120,14 @@ The two projects should share infrastructure where possible: model gateway, logg
 > corner (ADR-0018) — and RQ2 (GRPO) is deferred; both are **open for contributors** once the repo is
 > public. The live stretch question: how data-efficiently does each attack family (SFT vs DPO) strip
 > C5's alignment, and do the guardrails still contain a stripped model? (ADR-0019, exploratory.)
+>
+> **Answered (ADR-0020, Accepted, study concluded).** SFT/MLE strips alignment far more
+> data-efficiently than KL-anchored DPO on identical data — the efficiency result on the on-family
+> C19-vs-C21 dose curves, its direction corroborated off-family at the matched dose (C23-vs-C22, a
+> magnitude contrast) — both leakage-robust, with the LR confound disclosed. The foregone DPO instrument-check
+> (H6) did not fire on LLM-LAT and fires only a weak, source-specific strip off-family (C22); H8 is N/A
+> (no DPO dual-use strip to contain), so the load-bearing guardrail-containment result (H5) stands from
+> ADR-0018; H9 shows both DPO/SFT arms stay capable (UtilityNorm ~0.86).
 
 ---
 
@@ -219,10 +239,10 @@ The project should start with a compact condition matrix and expand only after t
 Add only after C1-C10 are complete.
 
 **Reframe (ADR-0019).** The DPO/GRPO stretch is repositioned as an **unalignment-attack** study (Phase 6,
-GRP-Obliteration): the conditions actually built are C19-C21 below. The original alignment-direction block
+GRP-Obliteration): the conditions actually built are C19-C23 below (C19/C20/C21 + the C22/C23 toxic-dpo cross-check). The original alignment-direction block
 C11-C18 is **deferred and open for contributors** once the repo is public — its alignment questions are
 likely NULL given ADR-0018, and its robustness rungs fold into the unalignment framing. **Responsible-use
-caveat:** the unalignment rungs (C19-C21 and any contributor GRPO-unalignment) are measurement-only,
+caveat:** the unalignment rungs (C19-C23 and any contributor GRPO-unalignment) are measurement-only,
 produce private/never-released degraded adapters, and must follow RESPONSIBLE_USE.md; "open for
 contributors" is not an invitation to publish alignment-stripping recipes.
 
@@ -233,6 +253,15 @@ Built in Stage 2 (ADR-0019), continue-trained from the C5 SFT adapter:
 | C19 | DPO-unaligned model | None | DPO attack-strength measurement (H6/H7/H9) |
 | C20 | DPO-unaligned model | Input + output | Whether guardrails contain a DPO-stripped model (H8) |
 | C21 | SFT-unaligned model (same harmful `chosen` data) | None | Loss-attribution control: isolates the objective vs C19 |
+| C22 | DPO-unaligned model (toxic-dpo source) | None | Off-family, leakage-clean cross-check of the DPO null (ADR-0020) |
+| C23 | SFT-unaligned model (toxic-dpo `chosen`) | None | Off-family objective contrast vs C22 (mirrors C19-vs-C21) |
+
+**Outcome (ADR-0020, Accepted — study concluded).** The SFT/MLE objective strips alignment far more
+data-efficiently than KL-anchored DPO on identical data — the data-efficiency result on the on-family
+C19-vs-C21 dose curves, its direction corroborated off-family at the matched dose (C23-vs-C22, a magnitude
+contrast, not a re-measured efficiency statistic) — leakage-robustly, with the LR confound disclosed. The foregone H6 instrument-check did not
+fire on LLM-LAT (C19 `≈` C5) and fires only a weak, source-specific strip off-family (C22); H8 N/A; H9
+both arms capable (UtilityNorm ~0.86). Adapters are private/never-released (Option B).
 
 Deferred / open for contributors (the original alignment-direction stretch block):
 
@@ -468,7 +497,7 @@ SFT deliverables:
 
 > **Reframe (ADR-0019).** In the executed study DPO is run as an **unalignment attack** (chosen =
 > harmful-compliant, rejected = refusal), continue-trained from C5, scored by ASR x UtilityNorm +
-> guardrail containment (conditions C19-C21). The alignment-direction objective below is deferred /
+> guardrail containment (conditions C19-C23). The alignment-direction objective below is deferred /
 > open-for-contributors. The reference-model and mode-collapse cautions still apply; the reference is
 > pinned to frozen C5 by an explicit mechanic (ADR-0019 decision 3).
 
@@ -953,6 +982,22 @@ safestack serve benchmark \
 
 ## 17. Phase-by-Phase Execution Plan
 
+> **Execution status (2026-09-06) — the experimental study is complete through Phase 6.** Phases 7-10 are deferred / open portfolio work (see the Project-status callout at the top).
+>
+> | Phase | Status | Evidence |
+> |---|---|---|
+> | 0 Foundation | DONE | ADR-0005 |
+> | 1 Eval harness + C1 baseline | DONE | ADR-0007 / ADR-0008 |
+> | 2 Guardrail layer (C2-C4) + dual-use H3 | DONE | ADR-0009-0014 |
+> | 3 SFT alignment (C5-C8, H1/H2) | DONE | ADR-0015 / ADR-0016 |
+> | 4 Defense-in-depth analysis (H1-H3) | DONE | `reports/phase4_defense_in_depth.md` + tables + `dashboard.html` |
+> | 5 Robustness stress (C9/C10, H4/H5) | DONE | ADR-0017 / ADR-0018 |
+> | 6 DPO-unalignment (C19-C23, H6-H9) | DONE — concludes the study | ADR-0019 / ADR-0020 |
+> | 7 GRPO | DEFERRED / open for contributors | ADR-0019 |
+> | 8 Inference benchmarking | DEFERRED / open for contributors | - |
+> | 9 Human audit / judge calibration | DEFERRED / open for contributors | ADR-0004 rule 7 / ADR-0020 FU5 |
+> | 10 Final report | DONE | `reports/safestack_report.md` |
+
 ## Phase 0 — Project foundation
 
 **Goal:** Build the skeleton and make all later experiments reproducible.
@@ -1121,6 +1166,8 @@ safestack serve benchmark \
 
 ## Phase 6 — DPO unalignment (concludes the study)
 
+**Status: DONE (ADR-0019 prereg / ADR-0020 result, both Accepted) — this phase concludes the study.** Built C19 (DPO), C20 (DPO + guardrail), C21 (matched SFT-on-`chosen`), plus the C22/C23 toxic-dpo cross-check. Headline: the SFT/MLE objective strips alignment far more data-efficiently than KL-anchored DPO on identical data (H7) — the efficiency result on the on-family C19-vs-C21 dose curves, its direction corroborated off-family at the matched dose (C23-vs-C22) — leakage-robustly; H6 null qualified source-specific; H8 N/A; H9 both arms capable.
+
 **Goal:** Run DPO as an unalignment attack continue-trained from C5, and compare attack families (SFT vs
 DPO) by data-efficiency, capability cost, and guardrail containment (ADR-0019). The original
 DPO-as-alignment comparison is deferred / open for contributors.
@@ -1141,7 +1188,7 @@ DPO-as-alignment comparison is deferred / open for contributors.
 
 ### Exit criteria
 
-- DPO result is interpretable and does not replace core SFT story.
+- **MET.** The DPO result is interpretable and does not replace the core SFT story: the headline is the objective-attribution finding (H7 — SFT/MLE strips far more data-efficiently than KL-anchored DPO on identical data; the efficiency result on the on-family C19-vs-C21 dose curves, its direction corroborated off-family at the matched dose C23-vs-C22, leakage-robustly), with the H6 instrument-check null qualified as source-specific, H8 N/A, and H9 both arms capable (ADR-0020, study concluded).
 
 ---
 
@@ -1175,6 +1222,8 @@ posture (private, never-released degraded adapters).
 
 ## Phase 8 — Inference benchmarking
 
+**Status: DEFERRED / open for contributors.** The serving-benchmark harness (a `serve benchmark` CLI + load driver) is not built and no benchmark run exists; this is pure-engineering portfolio work with no research dependency — the ADR-0020 conclusions do not rest on it.
+
 **Goal:** Make the project relevant to MLE/ML-systems roles.
 
 ### Tasks
@@ -1201,6 +1250,8 @@ posture (private, never-released degraded adapters).
 
 ## Phase 9 — Human audit and judge calibration
 
+**Status: DEFERRED / open for contributors.** The raw material (cached generations + frozen auto-labels) exists, but the human-labeling pass has not been run; it needs a private human-labeling pass over ~100-300 sampled outputs (ideally a second reviewer for inter-annotator agreement). The judge-floor limitation it would bound is disclosed in ADR-0020 (caveat 6) and ADR-0004 rule 7.
+
 **Goal:** Avoid blind trust in automated judges.
 
 ### Tasks
@@ -1225,6 +1276,8 @@ posture (private, never-released degraded adapters).
 ---
 
 ## Phase 10 — Final report and public polish
+
+**Status: DONE (final report).** `reports/safestack_report.md` synthesizes the full study (H1-H9; C1-C10 + C19-C23), with responsible-use posture, limitations, and a reproducibility appendix. Optional extras (demo video, expanded resume bullets) remain light polish.
 
 **Goal:** Make the project easy for recruiters to understand.
 
