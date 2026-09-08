@@ -13,7 +13,7 @@ The experimental study is **done**: the hypothesis arc (H1-H9) is fully resolved
 
 - **Defense-in-depth (Phases 0-4, H1-H3):** SFT alignment plus input/output guardrails; the C1-C10 core ablation (ADR-0005-0016; the Phase-4 synthesis in `reports/phase4_defense_in_depth.md`).
 - **Robustness (Phase 5, H4-H5):** model-level alignment is not permanent, and external guardrails stay load-bearing on a stripped model (ADR-0017/0018).
-- **Unalignment attacks (Phase 6, H6-H9) — the contribution:** the **SFT/MLE objective strips alignment far more data-efficiently than KL-anchored DPO on identical data**, established on-family (C19-vs-C21) and off-family (C23-vs-C22), leakage-robustly, with the single LR confound disclosed (ADR-0019/0020; conditions C19/C20/C21 + the C22/C23 toxic-dpo cross-check).
+- **Unalignment attacks (Phase 6, H6-H9) — the contribution:** the **SFT/MLE objective strips alignment far more data-efficiently than KL-anchored DPO on identical data** — the data-efficiency result on the on-family C19-vs-C21 dose curves, its direction corroborated off-family at the matched dose (C23-vs-C22, a magnitude contrast, not a re-measured efficiency statistic) — leakage-robustly, with the single LR confound disclosed (ADR-0019/0020; conditions C19/C20/C21 + the C22/C23 toxic-dpo cross-check).
 
 The final study report is written (`reports/safestack_report.md`, Phase 10). **Deferred / open for contributors — none a gate on the study's conclusions:** GRPO-unalignment and the alignment-direction rungs C11-C18 (Phase 7); inference benchmarking (Phase 8); human judge calibration (Phase 9); and the ADR-0020 follow-ups (a beta/LR de-confound arm, the 256-token truncation residual, the behavioural-overlap audit). All follow `RESPONSIBLE_USE.md` — these are documented open work, never an invitation to publish alignment-stripping recipes.
 
@@ -122,8 +122,9 @@ The two projects should share infrastructure where possible: model gateway, logg
 > C5's alignment, and do the guardrails still contain a stripped model? (ADR-0019, exploratory.)
 >
 > **Answered (ADR-0020, Accepted, study concluded).** SFT/MLE strips alignment far more
-> data-efficiently than KL-anchored DPO on identical data — on-family (C19-vs-C21) and off-family
-> (C23-vs-C22), both leakage-robust, with the LR confound disclosed. The foregone DPO instrument-check
+> data-efficiently than KL-anchored DPO on identical data — the efficiency result on the on-family
+> C19-vs-C21 dose curves, its direction corroborated off-family at the matched dose (C23-vs-C22, a
+> magnitude contrast) — both leakage-robust, with the LR confound disclosed. The foregone DPO instrument-check
 > (H6) did not fire on LLM-LAT and fires only a weak, source-specific strip off-family (C22); H8 is N/A
 > (no DPO dual-use strip to contain), so the load-bearing guardrail-containment result (H5) stands from
 > ADR-0018; H9 shows both DPO/SFT arms stay capable (UtilityNorm ~0.86).
@@ -256,8 +257,9 @@ Built in Stage 2 (ADR-0019), continue-trained from the C5 SFT adapter:
 | C23 | SFT-unaligned model (toxic-dpo `chosen`) | None | Off-family objective contrast vs C22 (mirrors C19-vs-C21) |
 
 **Outcome (ADR-0020, Accepted — study concluded).** The SFT/MLE objective strips alignment far more
-data-efficiently than KL-anchored DPO on identical data, established on-family (C19-vs-C21) and off-family
-(C23-vs-C22), leakage-robustly, with the LR confound disclosed. The foregone H6 instrument-check did not
+data-efficiently than KL-anchored DPO on identical data — the data-efficiency result on the on-family
+C19-vs-C21 dose curves, its direction corroborated off-family at the matched dose (C23-vs-C22, a magnitude
+contrast, not a re-measured efficiency statistic) — leakage-robustly, with the LR confound disclosed. The foregone H6 instrument-check did not
 fire on LLM-LAT (C19 `≈` C5) and fires only a weak, source-specific strip off-family (C22); H8 N/A; H9
 both arms capable (UtilityNorm ~0.86). Adapters are private/never-released (Option B).
 
@@ -1164,7 +1166,7 @@ safestack serve benchmark \
 
 ## Phase 6 — DPO unalignment (concludes the study)
 
-**Status: DONE (ADR-0019 prereg / ADR-0020 result, both Accepted) — this phase concludes the study.** Built C19 (DPO), C20 (DPO + guardrail), C21 (matched SFT-on-`chosen`), plus the C22/C23 toxic-dpo cross-check. Headline: the SFT/MLE objective strips alignment far more data-efficiently than KL-anchored DPO on identical data (H7), on-family and off-family, leakage-robustly; H6 null qualified source-specific; H8 N/A; H9 both arms capable.
+**Status: DONE (ADR-0019 prereg / ADR-0020 result, both Accepted) — this phase concludes the study.** Built C19 (DPO), C20 (DPO + guardrail), C21 (matched SFT-on-`chosen`), plus the C22/C23 toxic-dpo cross-check. Headline: the SFT/MLE objective strips alignment far more data-efficiently than KL-anchored DPO on identical data (H7) — the efficiency result on the on-family C19-vs-C21 dose curves, its direction corroborated off-family at the matched dose (C23-vs-C22) — leakage-robustly; H6 null qualified source-specific; H8 N/A; H9 both arms capable.
 
 **Goal:** Run DPO as an unalignment attack continue-trained from C5, and compare attack families (SFT vs
 DPO) by data-efficiency, capability cost, and guardrail containment (ADR-0019). The original
@@ -1186,7 +1188,7 @@ DPO-as-alignment comparison is deferred / open for contributors.
 
 ### Exit criteria
 
-- **MET.** The DPO result is interpretable and does not replace the core SFT story: the headline is the objective-attribution finding (H7 — SFT/MLE strips far more data-efficiently than KL-anchored DPO on identical data, on-family C19-vs-C21 and off-family C23-vs-C22, leakage-robustly), with the H6 instrument-check null qualified as source-specific, H8 N/A, and H9 both arms capable (ADR-0020, study concluded).
+- **MET.** The DPO result is interpretable and does not replace the core SFT story: the headline is the objective-attribution finding (H7 — SFT/MLE strips far more data-efficiently than KL-anchored DPO on identical data; the efficiency result on the on-family C19-vs-C21 dose curves, its direction corroborated off-family at the matched dose C23-vs-C22, leakage-robustly), with the H6 instrument-check null qualified as source-specific, H8 N/A, and H9 both arms capable (ADR-0020, study concluded).
 
 ---
 

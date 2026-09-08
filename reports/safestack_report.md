@@ -120,7 +120,7 @@ Phase 6 reframes fine-tuning as a controlled unalignment attack from the aligned
 1. **Layer value is contingent.** Guardrails look redundant on an aligned model and become load-bearing on a degraded one; the input screen is the safety layer on the base model and pure over-refusal tax on the aligned one. No layer's worth is free-standing.
 2. **The dual-use / benign-surface boundary is the persistent weak spot.** It is where guardrails add least on the aligned model (H3, H1) and where they cannot fully contain the degraded one (H5) — the one leg that resists every layer.
 3. **Alignment is shallow but capability is not.** ~411 examples flip safety past the base rate while leaving knowledge, reasoning, helpfulness, and instruction-following intact — safety and capability are separable axes.
-4. **How you fine-tune matters more than what you fine-tune on.** The objective (SFT vs KL-anchored DPO) dominates the data source in stripping efficiency, on-family and off-family.
+4. **How you fine-tune matters more than what you fine-tune on.** The objective (SFT vs KL-anchored DPO) dominates the data source — it sets stripping efficiency on the on-family C19-vs-C21 dose curves, and its direction holds off-family at the matched dose (C23-vs-C22).
 
 ## 8. Limitations
 
