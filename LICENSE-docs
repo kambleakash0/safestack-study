@@ -1,0 +1,32 @@
+SafeStack documentation and prose deliverables — license
+=========================================================
+
+SPDX-License-Identifier: CC-BY-4.0
+
+Copyright 2026 Akash Kamble
+
+The written/prose deliverables in this repository are licensed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0). This
+covers, specifically:
+
+  - docs/       (the master plan, ADRs, and other written documents)
+  - reports/    the prose write-ups, including reports/safestack_report.md
+                and the narrative report/analysis Markdown files
+
+Everything else in the repository — all source code and configuration
+(including safestack/, tests/, configs/, notebooks/, and the machine-readable
+metrics/JSON/YAML artifacts under reports/metrics, reports/selection, and
+reports/train_curves) — is licensed under Apache-2.0; see the LICENSE file.
+
+You are free to share and adapt the prose deliverables for any purpose,
+including commercially, provided you give appropriate credit, link to the
+license, and indicate if changes were made.
+
+Full legal text: https://creativecommons.org/licenses/by/4.0/legalcode
+Human-readable summary: https://creativecommons.org/licenses/by/4.0/
+
+Note: this license applies to the SafeStack authorship only. Third-party
+datasets, models, and tools referenced or loaded by this project remain under
+their own upstream licenses (e.g. the Mistral-7B base under Apache-2.0, and the
+data sources under their respective CC-BY-4.0 / CC-BY-NC-4.0 / MIT / CC0 terms);
+see RESPONSIBLE_USE.md and the per-dataset manifests for details.

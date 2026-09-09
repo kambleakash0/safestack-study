@@ -51,3 +51,12 @@ are in the master plan (§17).
 | 4 | Defense-in-depth ablation (C1–C8) |
 | 5 | Robustness stress test (C9–C10) |
 | 6–10 | DPO, GRPO, serving benchmarks, judge calibration, final report |
+
+## License
+
+This project is dual-licensed:
+
+- **Code and configuration** — Apache-2.0 ([`LICENSE`](LICENSE)). Covers `safestack/`, `tests/`, `configs/`, `notebooks/`, and the machine-readable metrics/JSON/YAML artifacts under `reports/`.
+- **Prose deliverables** — CC-BY-4.0 ([`LICENSE-docs`](LICENSE-docs)). Covers `docs/` (master plan, ADRs) and the narrative write-ups under `reports/` (including `reports/safestack_report.md`).
+
+Third-party datasets, models, and tools referenced or loaded by this project remain under their own upstream licenses; see [`RESPONSIBLE_USE.md`](RESPONSIBLE_USE.md) and the per-dataset manifests.
