@@ -25,6 +25,21 @@ env/
 # --- Notebooks ---
 .ipynb_checkpoints/
 
+# --- LaTeX build artifacts (keep .tex source and the .pdf output) ---
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+
 # --- Experiment tracking / run artifacts ---
 wandb/
 mlruns/
