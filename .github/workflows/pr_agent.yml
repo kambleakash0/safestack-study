@@ -1,22 +1,41 @@
 name: PR Agent
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
   issue_comment:
     types: [created]
+
 jobs:
   pr_agent_job:
-    if: ${{ github.event.sender.type != 'Bot' }}
+    # Skip bot-triggered events (incl. PR-Agent's own comments) to avoid loops.
+    # This repo is PUBLIC: an issue_comment run gets OPENAI_KEY for ANY commenter
+    # and PR-Agent doesn't check who commented, so slash commands only run for
+    # the repo owner, and only on PRs.
+    if: >-
+      ${{ github.event.sender.type != 'Bot' &&
+          (github.event_name != 'issue_comment' ||
+           (github.event.issue.pull_request &&
+            github.event.comment.user.login == github.repository_owner)) }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
-      contents: write
+      # read (not write): describe + review never push commits; write would only
+      # be needed for committing changelogs / applying code suggestions. Least-privilege.
+      contents: read
       issues: write
     name: Run pr agent
     steps:
       - name: PR Agent action step
-        uses: the-pr-agent/pr-agent@main
+        # Pinned by image digest so an upstream release can't run with our
+        # OPENAI_KEY + write-scoped GITHUB_TOKEN. A the-pr-agent/pr-agent@<commit>
+        # pin doesn't do this: its action builds FROM the rolling github_action
+        # image tag. Bump deliberately.
+        uses: docker://pragent/pr-agent@sha256:31b9aac6ab067bada9a0c1b001d30ebc500ea4487e00a93c18c59b9ef5fa66db # 0.47.0-github_action
         env:
+          # Repo secrets. OPENAI_KEY = LiteLLM virtual key;
+          # OPENAI__API_BASE (double underscore) = LiteLLM proxy .../v1.
+          # Model/config comes from this repo's .pr_agent.toml (no global settings repo).
           OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
           OPENAI__API_BASE: ${{ secrets.LITELLM_BASE_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

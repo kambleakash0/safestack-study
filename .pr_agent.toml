@@ -1,15 +1,37 @@
+# PR-Agent configuration for this repo.
+#
+# Precedence (low -> high):
+#   built-in defaults < this file < env vars
+
 [config]
-# models
 model = "gpt-6-astra"
-fallback_models = ["gpt-5.6-sol"]
+# The "openai/" prefix is required: PR-Agent only adds it for gpt-5* and
+# gpt-6-astra, and a bare id fails before reaching the proxy.
+fallback_models = ["openai/gpt-6.1-sol"]
+# gpt-6.1-sol is not in PR-Agent's token table (272k window).
 custom_model_max_tokens = 272000
+# Tuned down from the models' 272k window to cap per-PR cost
+max_model_tokens = 256000
+# Highest effort the proxy passes through ("max" is dropped). Applies to
+# gpt-6-astra; the fallback runs at the backend default.
+reasoning_effort = "xhigh"
+# gpt-6* models reject the temperature PR-Agent would otherwise send.
+no_temperature_models = ["gpt-6.1-sol"]
+# Per HTTP attempt, under the proxy's 300s request timeout. On a timeout, go
+# straight to the fallback instead of retrying.
+ai_timeout = 280
+retry_same_model_on_timeout = false
+num_retries = 0
 
 [github_action_config]
 auto_review = true
 auto_describe = true
 auto_improve = false
+# true: on every push to a PR, run push_commands (default /describe + /review,
+# so the description is regenerated too; the auto_* flags above don't apply to
+# pushes).
 handle_push_trigger = true
 
 [pr_code_suggestions]
-commitable_code_suggestions = true
+committable_code_suggestions = true
 num_code_suggestions_per_chunk = 4
