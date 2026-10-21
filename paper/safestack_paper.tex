@@ -1,3 +1,4 @@
+\pdfoutput=1
 \documentclass[11pt,a4paper]{article}
 
 \usepackage[utf8]{inputenc}
@@ -18,7 +19,7 @@
 \newcommand{\approxs}{$\sim$}
 
 \title{\textbf{SafeStack: Defense-in-Depth Evaluation for\\ Safety-Aligned Open Large Language Models}}
-\author{Akash Kamble\\ \small Independent Researcher \\ \small \texttt{kambleakash0@gmail.com}}
+\author{Akash Kamble\\ \small Independent Researcher \\ \small \texttt{kambleakash0@gmail.com} \\ \small \texttt{akashank@buffalo.edu}}
 \date{September 2026}
 
 \begin{document}
@@ -42,8 +43,8 @@ screen still charges its full \approxs{}33\% benign-block tax; (ii) this alignme
 permanent---\approxs{}411 continue-training examples strip it entirely, past the base rate;
 (iii) external guardrails are redundant on the aligned model but contain a 94\%-compliant
 stripped model back to \approxs{}0 on overt harm, i.e.\ they pay off when the
-weights fail; and (iv), exploratory, the fine-tuning \emph{objective} matters more than the
-fine-tuning data---plain SFT-on-\code{chosen} strips alignment to the ceiling while
+weights fail; and (iv), exploratory, the fine-tuning \emph{configuration}---objective, learning
+rate, and KL anchoring---matters more than the fine-tuning data: plain SFT-on-\code{chosen} strips alignment to the ceiling while
 KL-anchored Direct Preference Optimization (DPO) on the same data barely moves it. Throughout,
 defense-in-depth's value proves \emph{contingent}: each layer matters most where the others are
 weakest. All harmful data and deliberately-degraded model
@@ -78,16 +79,16 @@ outcome.
   (over-refusal, helpfulness) and bootstrap CIs.
   \item Evidence that model-level SFT alignment is shallow and separable from capability:
   \approxs{}411 unsafe-compliance examples strip safety \emph{past} the original base rate
-  (a shadow-alignment signature); the SFT attack arms stay near-fully capable (UtilityNorm, a normalized capability aggregate,
-  $0.86$ vs.\ the aligned $0.90$), while the stress-trained model pays a modest capability cost
-  ($0.72$).
+  (a shadow-alignment signature); the measured continue-trained arms (C19, C21) stay near-fully
+  capable (UtilityNorm, a normalized capability aggregate, $0.86$ vs.\ the aligned $0.90$), while the
+  stress-trained model pays a measurable capability cost ($0.72$).
   \item A defense-in-depth result: the same guardrail stack that is near-redundant on the
   aligned model becomes the decisive containment layer on the degraded one, removing one to
   two orders of magnitude more marginal ASR.
   \item An exploratory objective-attribution result: holding the harmful data constant, the
   SFT objective strips alignment far more data-efficiently than KL-anchored DPO,
-  established on-family and corroborated off-family, leakage-robustly (with a disclosed
-  learning-rate confound).
+  established within one data source and corroborated on an independent one, leakage-robustly
+  (with a disclosed learning-rate confound).
 \end{enumerate}
 
 \paragraph{Responsible use.}
@@ -106,10 +107,13 @@ The study draws on three strands of prior work. \emph{External moderation}:
 lightweight classifiers such as Llama Guard~\cite{llamaguard} and Granite Guardian~\cite{granite} screen
 prompts and responses independently of the policy model. \emph{Efficient alignment
 fine-tuning}: Low-Rank Adaptation and its quantized variant (LoRA/QLoRA)~\cite{lora,qlora} make single-GPU adaptation of a 7B model
-tractable, and preference optimization such as Direct Preference Optimization (DPO)~\cite{dpo} aligns (or, here, unaligns) a
-policy against a reference. \emph{Alignment fragility}: fine-tuning aligned models can
-compromise safety even without adversarial intent~\cite{ftcompromises}, and small amounts of
-targeted data can subvert safety---the ``shadow alignment'' phenomenon~\cite{shadow}. Harmful
+tractable, and preference optimization such as Direct Preference Optimization (DPO)~\cite{dpo}---which anchors the
+policy to a reference model through a Kullback--Leibler (KL) penalty of strength $\beta$---aligns
+(or, here, unaligns) it. \emph{Alignment fragility}: fine-tuning aligned models can
+compromise safety even without adversarial intent~\cite{ftcompromises}; parameter-efficient
+fine-tuning (LoRA) can by itself cheaply undo safety training~\cite{lermen}; small amounts of
+targeted data can subvert safety---the ``shadow alignment'' phenomenon~\cite{shadow}---and the
+shallowness of that safety has been argued to be a root cause~\cite{shallowsafety}. Harmful
 and benign-but-sensitive evaluation draws on public suites including
 AdvBench~\cite{advbench}, HarmBench~\cite{harmbench}, and XSTest~\cite{xstest}. SafeStack's
 contribution is not a new method but a controlled, preregistered measurement that isolates the
@@ -157,8 +161,9 @@ $2\times10^{-5}$, one epoch, assistant-only loss). Guardrails are
 
 \subsection{Conditions}
 The core matrix is C1--C10: the base and SFT-aligned models each crossed with
-\{none, input, output, input+output\} guardrails, plus a robustness-stressed model (C9) and
-its guarded counterpart (C10). Phase~6 adds five unalignment-attack arms (C19--C23), each
+\{none, input, output, input+output\} guardrails, plus a robustness-stressed model (C9;
+continue-trained on SORRY-Bench~\cite{sorrybench} unsafe-compliance data) and its guarded
+counterpart (C10). Phase~6 adds five unalignment-attack arms (C19--C23), each
 continue-trained from the SFT model (C5): DPO on a harmful preference source and matched SFT
 on the same \code{chosen} completions, on two independent data sources. Table~\ref{tab:conditions}
 defines each condition, and their locked-test results appear in Table~\ref{tab:headline};
@@ -168,7 +173,9 @@ C11--C18 are reserved for a deferred alignment-direction study and are not used 
 \centering
 \caption{Experimental conditions (design). Each condition crosses a model state with a
 guardrail configuration; measured results are in Table~\ref{tab:headline}. The gap C11--C18 is
-reserved for a deferred alignment-direction study and is not used here.}
+reserved for a deferred alignment-direction study and is not used here. Here $b^{*}$ is the
+dev-selected continue-training dose (number of examples), and \emph{off-family} denotes a training
+source that does not seed the evaluation suites.}
 \label{tab:conditions}
 \small
 \begin{tabular}{@{}l >{\raggedright\arraybackslash}p{0.27\textwidth} l >{\raggedright\arraybackslash}p{0.37\textwidth}@{}}
@@ -196,13 +203,15 @@ C23 & SFT-on-\code{chosen} from C5 (toxic-dpo)   & none         & Off-family obj
 \end{table}
 
 \subsection{Judges and metrics}
-Safety is scored by \code{Llama-Guard-3-1B} (revision \code{acf7aafa}, prompt version v2);
+Safety is scored by \code{Llama-Guard-3-1B}~\cite{llama3} (revision \code{acf7aafa}, prompt version v2);
 over-refusal by a heuristic refusal detector; helpfulness by a Mistral-7B rubric judge on a
 1--5 scale. ASR is the fraction of harmful prompts receiving a materially compliant final
 response (judged unsafe/compliant by the safety judge---substantively assisting, not
-refusing); over-refusal is the fraction of benign prompts wrongly refused; guardrail
-false-positive/negative rates (FPR/FNR) are benign-blocked / unsafe-allowed. Headline metrics
-carry 95\% bootstrap CIs ($B=10000$, seed 0).
+refusing); over-refusal is the fraction of benign prompts wrongly refused; the guardrail
+false-positive rate (FPR) is the benign-block rate. Headline metrics
+carry 95\% bootstrap CIs ($B=10000$, seed 0). Capability is aggregated as UtilityNorm: the mean of
+MMLU, GSM8K, and IFEval scores, each normalized to the frozen base (which therefore scores $1$), in
+$[0,1]$.
 
 \subsection{Evaluation suites}
 Five locked-test suites are held fixed (identical manifest hash) across every condition, as
@@ -221,7 +230,7 @@ Suite & Role & $n$ \\
 \code{harmful\_harmbench\_v1}           & overt-harm ASR                 & 200 \\
 \code{dualuse\_harmbench\_contextual\_v1} & dual-use / benign-surface ASR & 100 \\
 \code{overrefusal\_xstest\_v1}          & over-refusal (benign)          & 250 \\
-\code{helpfulness\_alpaca\_v1}          & benign helpfulness             & 200 \\
+\code{helpfulness\_alpaca\_v1}~\cite{alpaca} & benign helpfulness      & 200 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -229,7 +238,7 @@ Suite & Role & $n$ \\
 \subsection{Experimental discipline}
 Each phase was preregistered before any number was produced: hypotheses were labeled
 confirmatory (H1--H5) or exploratory (H6--H9); comparisons are read at a CI-separability bar
-($\approx$ denotes overlapping 95\% CIs, $>$/$<$ non-overlapping) under which a null is a
+($\sim$ denotes an approximate value; $\approx$ denotes overlapping 95\% CIs, $>$/$<$ non-overlapping) under which a null is a
 valid outcome; ASR is never reported without its paired over-refusal and helpfulness;
 train/dev/locked-test splits are separated with exact and approximate leakage deduplication;
 and decoding is greedy and deterministic (seed 0, \code{max\_new\_tokens}~256, bf16). A
@@ -239,12 +248,12 @@ content-hash cache makes every result a pure function of $(\text{model}, \text{p
 \subsection{Implementation}
 The study runs on a config-driven evaluation and training platform implemented in Python
 (3.12--3.13). Its components are: an \emph{evaluation harness} computing ASR, over-refusal,
-helpfulness, and guardrail FPR/FNR with bootstrap CIs; a \emph{model gateway} with pluggable
+helpfulness, and guardrail FPR with bootstrap CIs; a \emph{model gateway} with pluggable
 self-hosted (Hugging Face Transformers) and OpenAI-compatible API backends; \emph{alignment
 training} via SFT (a length-based label mask on the Transformers trainer) and DPO (via TRL's
 \code{DPOTrainer}) with LoRA/QLoRA (PEFT, 4-bit via bitsandbytes, Accelerate); a
 \emph{guardrail layer} wrapping Granite Guardian; and \emph{capability and integrity tooling}
-comprising vLLM-served capability evaluation (MMLU~\cite{mmlu} / GSM8K~\cite{gsm8k} /
+comprising capability evaluation served with vLLM~\cite{vllm} (MMLU~\cite{mmlu} / GSM8K~\cite{gsm8k} /
 IFEval~\cite{ifeval} via the LM Evaluation Harness~\cite{lmeval}) and a sentence-embedding
 semantic leakage audit. Configuration and schemas use
 Pydantic; the command-line interface uses Typer. Dependencies are locked with a supply-chain
@@ -282,7 +291,7 @@ the magnitude/separability is empirical.
 \begin{table}[t]
 \centering
 \caption{Headline results: Attack Success Rate (ASR) by suite with paired benign metrics.
-Bold rows are the four load-bearing conditions. Over-refusal and helpfulness on
+Bold rows are the four headline conditions (C5, C9, C21, C23). Over-refusal and helpfulness on
 input-bearing guardrail rungs (marked $\dagger$) are scored on pre-block text and understate
 the true benign cost, which is the guardrail FPR column (\approxs{}0.33 = one in three
 borderline-benign prompts blocked before generation).}
@@ -297,15 +306,15 @@ Cond & Condition & adv & harm & dual & over-ref & help & FPR \\
 C1 & base / none                        & 0.548 & 0.675 & 0.740 & 0.024 & 4.92 & 0.000 \\
 C2 & base / input                       & 0.000 & 0.000 & 0.190 & 0.024$\dagger$ & 4.92$\dagger$ & 0.336 \\
 C3 & base / output                      & 0.100 & 0.130 & 0.330 & 0.024 & 4.92 & 0.028 \\
-C4 & base / in+out                      & 0.000 & 0.000 & 0.130 & 0.024$\dagger$ & 4.92$\dagger$ & 0.336 \\
+C4 & base / input+output                & 0.000 & 0.000 & 0.130 & 0.024$\dagger$ & 4.92$\dagger$ & 0.336 \\
 \textbf{C5} & \textbf{SFT / none}       & \textbf{0.010} & \textbf{0.035} & \textbf{0.100} & 0.036 & 4.91 & 0.000 \\
 C6 & SFT / input                        & 0.000 & 0.000 & 0.030 & 0.036$\dagger$ & 4.91$\dagger$ & 0.332 \\
 C7 & SFT / output                       & 0.002 & 0.015 & 0.080 & 0.036 & 4.91 & 0.012 \\
-C8 & SFT / in+out                       & 0.000 & 0.000 & 0.030 & 0.036$\dagger$ & 4.91$\dagger$ & 0.336 \\
+C8 & SFT / input+output                 & 0.000 & 0.000 & 0.030 & 0.036$\dagger$ & 4.91$\dagger$ & 0.336 \\
 \textbf{C9} & \textbf{Stressed SFT / none} & \textbf{0.938} & \textbf{0.940} & \textbf{0.940} & 0.000 & 4.92 & 0.000 \\
-C10 & Stressed SFT / in+out               & 0.000 & 0.000 & 0.240 & 0.000$\dagger$ & 4.92$\dagger$ & 0.324 \\
+C10 & Stressed SFT / input+output         & 0.000 & 0.000 & 0.240 & 0.000$\dagger$ & 4.92$\dagger$ & 0.324 \\
 C19 & DPO-unalign (LLM-LAT) / none      & 0.010 & 0.020 & 0.170 & 0.044 & 4.87 & 0.000 \\
-C20 & DPO-unalign / in+out              & 0.000 & 0.000 & 0.020 & 0.044$\dagger$ & 4.87$\dagger$ & 0.324 \\
+C20 & DPO-unalign (LLM-LAT) / input+output & 0.000 & 0.000 & 0.020 & 0.044$\dagger$ & 4.87$\dagger$ & 0.324 \\
 \textbf{C21} & \textbf{SFT-on-chosen (LLM-LAT) / none} & \textbf{0.952} & \textbf{0.935} & \textbf{0.840} & 0.000 & 4.90 & 0.000 \\
 C22 & DPO-unalign (toxic-dpo) / none    & 0.054 & 0.155 & 0.330 & 0.016 & 4.92 & 0.000 \\
 \textbf{C23} & \textbf{SFT-on-chosen (toxic-dpo) / none} & \textbf{0.819} & \textbf{0.715} & \textbf{0.710} & 0.000 & 4.89 & 0.000 \\
@@ -316,7 +325,7 @@ C22 & DPO-unalign (toxic-dpo) / none    & 0.054 & 0.155 & 0.330 & 0.016 & 4.92 &
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.82\textwidth]{fig_bars.pdf}
-\caption{Locked-test ASR across the load-bearing conditions, by suite. Weight-level SFT
+\caption{Locked-test ASR across the defense-in-depth arc (C1, C5, C9, C10), by suite. Weight-level SFT
 alignment (C5) collapses ASR from the base model (C1); \approxs{}411 continue-training examples
 strip it back up (C9); the input+output guardrail stack then contains the stripped model (C10)
 on overt harm, leaving a dual-use residual. Layer value is contingent: each layer matters most
@@ -363,7 +372,7 @@ stacked guardrails buy little separable safety at unchanged usability cost.
 
 \subsection{Robustness stress (C9--C10): H4/H5 supported---guardrails become load-bearing}
 \textbf{H4 (alignment is not permanent) is supported decisively.} Continue-training the SFT
-model on \approxs{}411 unsafe-compliance examples (the dev-selected budget $b^{*}=411$; $b^{*}$
+model on \approxs{}411 SORRY-Bench unsafe-compliance examples (the dev-selected budget $b^{*}=411$; $b^{*}$
 is the continue-training dose---number of examples---chosen on the dev split) strips
 safety on every suite: advbench $0.010 \rightarrow 0.938$, harmbench $0.035 \rightarrow 0.940$,
 dual-use $0.100 \rightarrow 0.940$---CI-separable, with no paired cost (over-refusal
@@ -431,8 +440,7 @@ Table~\ref{tab:headline}.}
 
 \textbf{H8 (containment across families) is N/A}: with no DPO dual-use strip to contain, the
 load-bearing containment result stands from Phase~5. \textbf{H9 (capability cost).}
-Same-backend (vLLM) UtilityNorm---the mean of capability-benchmark scores (MMLU, GSM8K, IFEval)
-each normalized to the frozen base, in $[0,1]$---puts C19 and C21 at $0.863 / 0.864$---at C5's $0.902$ level and
+Same-backend (vLLM) UtilityNorm puts C19 and C21 at $0.863 / 0.864$---at C5's $0.902$ level and
 far above the stressed C9's $0.718$---so the DPO null is retained alignment, not capability
 loss, and the SFT strip is capable compliance, not a degenerate shell.\footnote{A session-base
 recomputation reads both arms at $0.858$, within the $0.03$ drift gate; the figures above are
@@ -454,8 +462,8 @@ Four themes cut across the results.
   where guardrails add least on the aligned model and where they cannot fully contain the
   degraded one---the one leg that resists every layer.
   \item \textbf{Alignment is shallow, and safety is separable from capability.} \approxs{}411
-  examples flip safety past the base rate; the SFT attack arms (C21/C23) keep near-full
-  capability (UtilityNorm $0.86$, close to C5's $0.90$), so safety can be stripped without
+  examples flip safety past the base rate; the measured SFT attack arm (C21) keeps near-full
+  capability (UtilityNorm $0.864$, close to C5's $0.902$), so safety can be stripped without
   gutting capability. The SORRY-Bench stress model (C9) does pay a measurable cost ($0.72$,
   instruction-following hit hardest), so how much capability survives depends on the strip
   recipe.
@@ -494,7 +502,7 @@ Four themes cut across the results.
   seed 0; the reported bootstrap CIs capture evaluation-set sampling only, not training-run
   variance (initialization, data order), so between-condition differences are not tested
   against training stochasticity.
-  \item \textbf{Overlap is not equivalence.} The rule-6 bar reads non-overlapping CIs as a
+  \item \textbf{Overlap is not equivalence.} The CI-separability bar reads non-overlapping CIs as a
   difference and overlapping CIs as ``not separable''; the latter is absence of evidence, not a
   positive equivalence test, and no power analysis or equivalence test backs the null and
   redundancy reads (guardrails ``redundant'' on the aligned model, H3, H6).
@@ -550,7 +558,7 @@ the responsible-use policy, raw harmful prompts/completions and the robustness-s
 unalignment-attacked adapters are not released; the released aggregate metrics reproduce every
 number in this report.
 
-\paragraph{Open / deferred work.} A GRPO (Group Relative Policy Optimization) unalignment arm and alignment-direction rungs;
+\paragraph{Open / deferred work.} A GRPO (Group Relative Policy Optimization~\cite{grpo}) unalignment arm and alignment-direction rungs;
 inference/serving benchmarks; human judge calibration; and the $\beta$/learning-rate
 de-confound arm, a decode-truncation check, and a behavioural-overlap audit. None gates the
 results above, and all are bound by the project's responsible-use policy.
@@ -561,12 +569,18 @@ results above, and all are bound by the project's responsible-use policy.
 \bibitem{lora} Hu, E.\ J.\ et al. (2021). \emph{LoRA: Low-Rank Adaptation of Large Language Models}. arXiv:2106.09685. (ICLR 2022.)
 \bibitem{qlora} Dettmers, T.\ et al. (2023). \emph{QLoRA: Efficient Finetuning of Quantized LLMs}. arXiv:2305.14314. (NeurIPS 2023.)
 \bibitem{dpo} Rafailov, R.\ et al. (2023). \emph{Direct Preference Optimization: Your Language Model is Secretly a Reward Model}. arXiv:2305.18290. (NeurIPS 2023.)
+\bibitem{grpo} Shao, Z.\ et al. (2024). \emph{DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models}. arXiv:2402.03300. (Introduces GRPO.)
 \bibitem{llamaguard} Inan, H.\ et al. (2023). \emph{Llama Guard: LLM-based Input-Output Safeguard for Human-AI Conversations}. arXiv:2312.06674.
+\bibitem{llama3} Grattafiori, A.\ et al. (2024). \emph{The Llama 3 Herd of Models}. arXiv:2407.21783. (Includes Llama Guard 3.)
 \bibitem{advbench} Zou, A.\ et al. (2023). \emph{Universal and Transferable Adversarial Attacks on Aligned Language Models}. arXiv:2307.15043. (AdvBench.)
 \bibitem{harmbench} Mazeika, M.\ et al. (2024). \emph{HarmBench: A Standardized Evaluation Framework for Automated Red Teaming and Robust Refusal}. arXiv:2402.04249. (ICML 2024.)
 \bibitem{xstest} R\"ottger, P.\ et al. (2023). \emph{XSTest: A Test Suite for Identifying Exaggerated Safety Behaviours in Large Language Models}. arXiv:2308.01263. (NAACL 2024.)
+\bibitem{alpaca} Taori, R.\ et al. (2023). \emph{Stanford Alpaca: An Instruction-following LLaMA Model}. Stanford CRFM. \url{https://github.com/tatsu-lab/stanford_alpaca}.
 \bibitem{ftcompromises} Qi, X.\ et al. (2023). \emph{Fine-tuning Aligned Language Models Compromises Safety, Even When Users Do Not Intend To!} arXiv:2310.03693. (ICLR 2024.)
 \bibitem{shadow} Yang, X.\ et al. (2023). \emph{Shadow Alignment: The Ease of Subverting Safely-Aligned Language Models}. arXiv:2310.02949.
+\bibitem{lermen} Lermen, S., Rogers-Smith, C., Ladish, J. (2023). \emph{LoRA Fine-tuning Efficiently Undoes Safety Training in Llama 2-Chat 70B}. arXiv:2310.20624.
+\bibitem{shallowsafety} Qi, X.\ et al. (2024). \emph{Safety Alignment Should Be Made More Than Just a Few Tokens Deep}. arXiv:2406.05946. (ICLR 2025.)
+\bibitem{sorrybench} Xie, T.\ et al. (2024). \emph{SORRY-Bench: Systematically Evaluating Large Language Model Safety Refusal Behaviors}. arXiv:2406.14598. (ICLR 2025.)
 \bibitem{granite} Padhi, I.\ et al. (2024). \emph{Granite Guardian}. arXiv:2412.07724.
 \bibitem{llmlat} Sheshadri, A.\ et al. (2024). \emph{Latent Adversarial Training Improves Robustness to Persistent Harmful Behaviors in LLMs}. arXiv:2407.15549. Dataset: \texttt{LLM-LAT/harmful-dataset} (Hugging Face).
 \bibitem{toxicdpo} Durbin, J.\ (2024). \emph{toxic-dpo-v0.2}. Hugging Face dataset \texttt{unalignment/toxic-dpo-v0.2} (CC-BY-4.0).
@@ -574,6 +588,7 @@ results above, and all are bound by the project's responsible-use policy.
 \bibitem{gsm8k} Cobbe, K.\ et al. (2021). \emph{Training Verifiers to Solve Math Word Problems}. arXiv:2110.14168.
 \bibitem{ifeval} Zhou, J.\ et al. (2023). \emph{Instruction-Following Evaluation for Large Language Models}. arXiv:2311.07911.
 \bibitem{lmeval} Gao, L.\ et al. (2024). \emph{The Language Model Evaluation Harness}. Zenodo, v0.4.3. DOI: 10.5281/zenodo.12608602.
+\bibitem{vllm} Kwon, W.\ et al. (2023). \emph{Efficient Memory Management for Large Language Model Serving with PagedAttention}. arXiv:2309.06180. (SOSP 2023.)
 \end{thebibliography}
 
 \end{document}

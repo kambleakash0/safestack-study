@@ -18,6 +18,8 @@ plt.rcParams.update({
     "font.size": 9,
     "axes.linewidth": 0.8,
     "hatch.linewidth": 0.7,
+    "pdf.fonttype": 42,  # embed TrueType outlines, not Type 3 (arXiv-friendly)
+    "ps.fonttype": 42,
 })
 
 OUT = os.path.dirname(os.path.abspath(__file__))
